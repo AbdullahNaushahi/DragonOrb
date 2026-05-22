@@ -4,9 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>DragonOrb.io — Devour Everything</title>
-<!-- Firebase Realtime Database -->
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
 <!-- Supabase (required for multiplayer rooms) -->
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -786,6 +783,7 @@ const remotePlayers = new Map();
 let broadcastTimer  = null;
 
 function initGun() {
+  if (supa) return; // already initialized — don't recreate
   try {
     supa = window.supabase.createClient(SUPA_URL, SUPA_KEY);
     console.log('[DragonOrb] Supabase client created ✓');
@@ -975,6 +973,8 @@ async function loadAndRenderGLB(hlName) {
 
 function initGLB(name) {
   setTimeout(() => loadAndRenderGLB(name || ''), 1500);
+  // Auto-refresh leaderboard every 15s so all players see the same data
+  setInterval(() => loadAndRenderGLB(player ? player.name : ''), 15000);
 }
 
 function renderGLB(list, hl) {
@@ -2302,7 +2302,6 @@ function startGame(){
     if(rc)document.getElementById('room-input').value=rc;
   }catch{}
   const roomCode=document.getElementById('room-input').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'')||'global';
-  initGun();
   initMultiplayer(roomCode);
   animId=requestAnimationFrame(loop);
 }
@@ -2447,13 +2446,15 @@ document.getElementById('name-input').addEventListener('keydown',e=>{if(e.key===
 initInput();initMobile();
 try{const n=localStorage.getItem('dragonorb_name');if(n)document.getElementById('name-input').value=n;}catch{}
 renderStatsCard();renderSkinsCard();
-// Wait for Supabase CDN then init
+// Init Supabase once on page load, then connect to room from URL if present
 function bootMultiplayer() {
   if (typeof window.supabase !== 'undefined') {
     initGun();
+    // Pre-join room from URL so presence is established before game starts
+    const preRoom = document.getElementById('room-input').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'') || 'global';
+    initMultiplayer(preRoom);
     initGLB((()=>{try{return localStorage.getItem('dragonorb_name')||'';}catch{return'';}})());
   } else {
-    // CDN not ready yet, retry
     setTimeout(bootMultiplayer, 200);
   }
 }
