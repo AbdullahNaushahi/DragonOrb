@@ -162,26 +162,16 @@ canvas#gc{display:block;position:fixed;inset:0}
 #spec-text{font-size:clamp(13px,3.5vw,16px);color:#ff6060;letter-spacing:3px;text-transform:uppercase}
 #spec-sub{font-size:clamp(10px,2vw,11px);color:var(--muted);margin-top:4px}
 
-/* ══════════════════════════════════════════
-   SIMPLIFIED MOBILE CONTROLS
-   Two zones:
-   LEFT HALF  → invisible joystick (touch anywhere)
-   RIGHT SIDE → FIRE (big, hold) + SPLIT (small pill above)
-   NO eject button — eject is W key on desktop only
-══════════════════════════════════════════ */
 #mob{display:none;position:fixed;inset:0;pointer-events:none;z-index:20}
 
-/* Left zone — invisible, full left half of screen */
 #left-zone{
   position:absolute;
   left:0;top:0;
   width:52%;height:100%;
   pointer-events:all;
   touch-action:none;
-  /* subtle guide ring shows on first touch */
 }
 
-/* Visual joystick ring — appears where you touch, then fades */
 #joy-ring{
   position:absolute;
   width:100px;height:100px;
@@ -205,7 +195,6 @@ canvas#gc{display:block;position:fixed;inset:0}
   box-shadow:0 0 12px rgba(180,90,255,.5);
 }
 
-/* Mobile hint label — shows for 4s on first game */
 #mob-hint{
   position:absolute;
   bottom:56%;
@@ -220,7 +209,6 @@ canvas#gc{display:block;position:fixed;inset:0}
 }
 #mob-hint.show{opacity:1}
 
-/* Right side buttons */
 #btn-split{
   position:absolute;
   bottom:196px;right:16px;
@@ -240,7 +228,6 @@ canvas#gc{display:block;position:fixed;inset:0}
 }
 #btn-split:active{background:rgba(90,30,160,.9);transform:scale(.95)}
 
-/* Big fire button */
 #btn-fire{
   position:absolute;
   bottom:16px;right:16px;
@@ -258,7 +245,6 @@ canvas#gc{display:block;position:fixed;inset:0}
 }
 #btn-fire .fire-icon{font-size:38px;line-height:1}
 #btn-fire .fire-text{font-size:11px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,180,80,.8)}
-/* Charge progress ring on fire button */
 #fire-btn-bar{
   width:130px;height:6px;
   background:rgba(255,80,0,.15);
@@ -287,9 +273,6 @@ canvas#gc{display:block;position:fixed;inset:0}
 }
 @keyframes firepulse{from{transform:scale(1)}to{transform:scale(1.15)}}
 
-/* ══════════════════════════════════════════
-   RESPONSIVE HUD
-══════════════════════════════════════════ */
 @media (max-width: 600px) {
   #leaderboard  { display:none !important; }
   #coins-bar    { display:none !important; }
@@ -306,9 +289,6 @@ canvas#gc{display:block;position:fixed;inset:0}
   #minimap     { width:110px !important;height:110px !important; }
 }
 
-/* ══════════════════════════════════════════
-   OVERLAY
-══════════════════════════════════════════ */
 #overlay{position:fixed;inset:0;
   background:radial-gradient(ellipse at center,rgba(20,5,40,.97),rgba(3,1,10,.99));
   display:flex;align-items:center;justify-content:center;flex-direction:column;
@@ -458,14 +438,11 @@ canvas#gc{display:block;position:fixed;inset:0}
   <div id="spec-sub">Spectating realm…</div>
 </div>
 
-<!-- ── SIMPLIFIED MOBILE CONTROLS ── -->
 <div id="mob">
-  <!-- Left half = movement zone -->
   <div id="left-zone">
     <div id="joy-ring"><div id="joy-thumb"></div></div>
     <div id="mob-hint">DRAG to move</div>
   </div>
-  <!-- Right side: split pill + big fire button -->
   <button id="btn-split">✦ SPLIT</button>
   <button id="btn-fire">
     <span class="fire-icon">🔥</span>
@@ -898,14 +875,18 @@ function updateOnlineDisplay(){
 }
 
 /* ══════════════════════════════════════════
-   CONSTANTS
+   CONSTANTS  —  MOBILE PATCHES APPLIED:
+   • BOT_COUNT:  mobile 45 → 90
+   • FOOD_COUNT: mobile 3800 → 5500
+   • BASE_SPD:   mobile 128 → 160  (+25%)
+   • MIN_SPD:    mobile 0.28 → 0.38 (faster minimum)
 ══════════════════════════════════════════ */
 const MAP_SIZE=10000,GRID_CELL=260;
 const isMobile=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)||'ontouchstart' in window;
-const FOOD_COUNT=isMobile?3800:6500;
-const BOT_COUNT=isMobile?45:70;
+const FOOD_COUNT=isMobile?5500:6500;
+const BOT_COUNT=isMobile?90:70;
 const FOOD_R=6,PLAYER_R=24,EAT_RATIO=0.85;
-const BASE_SPD=128,SPD_SCALE=52,MIN_SPD=0.28,SPLIT_BURST=1.75,MERGE_TIME=8,MAX_CELLS=16,VPAD=110;
+const BASE_SPD=isMobile?160:128,SPD_SCALE=52,MIN_SPD=isMobile?0.38:0.28,SPLIT_BURST=1.75,MERGE_TIME=8,MAX_CELLS=16,VPAD=110;
 const FIRE_CHARGE_TIME=1.1,FIRE_COOLDOWN=4.5,FIRE_SPEED=540,FIRE_MAX_RANGE=1350;
 const DECAY_THRESHOLD=50,DECAY_RATE=0.004,EDGE_ZONE=500;
 const EJECT_MIN_R=30,EJECT_MASS_FRAC=0.12,EJECT_SPEED=400;
@@ -1212,7 +1193,6 @@ function updateFire(dt){
   document.getElementById('fire-hud').classList.toggle('fire-ready',fireCooldown<=0&&!fireCharging&&fireCharge===0);
   if(fireCharging&&fireCooldown<=0)fireCharge=Math.min(1,fireCharge+dt/chargeTime);
   fireCooldown=Math.max(0,fireCooldown-dt);
-  // Desktop fire HUD
   const bar=document.getElementById('fire-bar'),cd=document.getElementById('fire-cd');
   if(fireCooldown>0){
     bar.style.width=((1-fireCooldown/FIRE_COOLDOWN)*100)+'%';
@@ -1223,7 +1203,6 @@ function updateFire(dt){
     bar.style.background='linear-gradient(90deg,var(--fire),var(--fire2))';
     cd.textContent=fireCharging?'🔥 CHARGING…':'READY — Hold SPACE / Right-click';
   }
-  // Mobile fire button state
   const fireBtn=document.getElementById('btn-fire');
   const fireFill=document.getElementById('fire-btn-fill');
   const fireCdMob=document.getElementById('fire-cd-mob');
@@ -1241,7 +1220,6 @@ function updateFire(dt){
       fireBtn.classList.toggle('charging',fireCharging);
     }
   }
-  // Firebolt physics
   for(let i=firebolts.length-1;i>=0;i--){
     const fb=firebolts[i];
     const moved=hypot(fb.vx,fb.vy)*dt;
@@ -1590,7 +1568,8 @@ function drawMinimap(){
   const MS=140,sc=MS/MAP_SIZE;
   mc.clearRect(0,0,MS,MS);mc.fillStyle='rgba(4,2,14,.95)';mc.fillRect(0,0,MS,MS);
   mc.fillStyle='rgba(130,80,190,.3)';for(let i=0;i<food.length;i+=12)mc.fillRect(food[i].x*sc-.6,food[i].y*sc-.6,1.4,1.4);
-  for(const b of bots){if(b.dead)continue;mc.fillStyle=b.palette.hi;mc.beginPath();mc.arc(b.x*sc,b.y*sc,Math.max(1.5,b.r*sc*1.8),0,Math.PI*2);mc.fill();}
+  /* PATCH: bigger bot dots on mobile minimap for visibility */
+  for(const b of bots){if(b.dead)continue;mc.fillStyle=b.palette.hi;mc.beginPath();mc.arc(b.x*sc,b.y*sc,Math.max(isMobile?2.5:1.5,b.r*sc*(isMobile?2.8:1.8)),0,Math.PI*2);mc.fill();}
   for(const[,rp] of remotePlayers){if(!rp.cells)continue;mc.fillStyle='#4ade80';mc.shadowColor='#4ade80';mc.shadowBlur=4;for(const rc of rp.cells){mc.beginPath();mc.arc(rc.x*sc,rc.y*sc,Math.max(2.5,rc.r*sc*2),0,Math.PI*2);mc.fill();}mc.shadowBlur=0;}
   if(player){mc.fillStyle='#c084fc';mc.shadowColor='#c084fc';mc.shadowBlur=5;for(const c of player.cells){mc.beginPath();mc.arc(c.x*sc,c.y*sc,Math.max(2.5,c.r*sc*2.2),0,Math.PI*2);mc.fill();}mc.shadowBlur=0;
     const vw=W/cam.zoom*sc,vh=H/cam.zoom*sc;mc.strokeStyle='rgba(180,120,255,.4)';mc.lineWidth=1;mc.strokeRect(cam.x*sc-vw/2,cam.y*sc-vh/2,vw,vh);}
@@ -1820,16 +1799,7 @@ function initInput(){
 }
 
 /* ══════════════════════════════════════════
-   MOBILE CONTROLS — SIMPLIFIED
-   
-   Left half of screen = movement zone
-   Touch anywhere on left → virtual joystick appears there
-   
-   Right side:
-   - Big FIRE button (hold to charge, release to fire)
-   - Small SPLIT pill above fire button
-   
-   No eject button. Simple. Clean.
+   MOBILE CONTROLS
 ══════════════════════════════════════════ */
 function initMobile(){
   if(!isMobile)return;
@@ -1839,13 +1809,11 @@ function initMobile(){
   const joyRing=document.getElementById('joy-ring');
   const joyThumb=document.getElementById('joy-thumb');
   const mobHint=document.getElementById('mob-hint');
-  const DEAD=50; // dead zone radius
-  const BASE=50; // max joystick displacement
+  const BASE=50;
 
   let jActive=false,jTid=-1,jOriginX=0,jOriginY=0;
   let firstTouch=true;
 
-  // Show hint on first game
   if((SD.games||0)<4){
     mobHint.classList.add('show');
     setTimeout(()=>mobHint.classList.remove('show'),3500);
@@ -1856,7 +1824,6 @@ function initMobile(){
     const t=e.changedTouches[0];
     jTid=t.identifier;jActive=true;
     jOriginX=t.clientX;jOriginY=t.clientY;
-    // Show ring at touch point
     joyRing.style.left=t.clientX+'px';joyRing.style.top=t.clientY+'px';
     joyThumb.style.left=t.clientX+'px';joyThumb.style.top=t.clientY+'px';
     joyRing.classList.add('visible');
@@ -1872,9 +1839,7 @@ function initMobile(){
     const cl=Math.min(d,BASE);
     const a=Math.atan2(dy,dx);
     const nx=Math.cos(a),ny=Math.sin(a);
-    // Move thumb
     joyThumb.style.left=(jOriginX+nx*cl)+'px';joyThumb.style.top=(jOriginY+ny*cl)+'px';
-    // Drive player toward mouse direction
     if(player&&player.cells.length&&d>8){
       const fr=cl/BASE;
       const avg={x:0,y:0};for(const c of player.cells){avg.x+=c.x;avg.y+=c.y;}
@@ -1889,17 +1854,14 @@ function initMobile(){
     if(!found)return;
     jActive=false;jTid=-1;
     joyRing.classList.remove('visible');
-    // Stop player — set target to current position
     if(player&&player.cells.length){mouse.wx=player.cells[0].x;mouse.wy=player.cells[0].y;}
   };
   document.addEventListener('touchend',endJoy);document.addEventListener('touchcancel',endJoy);
 
-  // SPLIT button
   document.getElementById('btn-split').addEventListener('touchstart',e=>{
     e.preventDefault();e.stopPropagation();splitPlayer();
   },{passive:false});
 
-  // FIRE button — hold to charge, release to fire
   const fireBtn=document.getElementById('btn-fire');
   fireBtn.addEventListener('touchstart',e=>{
     e.preventDefault();e.stopPropagation();startChargeFire();
