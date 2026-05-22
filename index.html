@@ -4,8 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>DragonOrb.io — Devour Everything</title>
-<!-- Gun.js — P2P real-time multiplayer, no backend needed -->
-<script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
+<!-- Firebase Realtime Database -->
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.0/firebase-database-compat.js"></script>
+<!-- Supabase (required for multiplayer rooms) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -769,77 +772,103 @@ let SD = loadSave();
    Real WebSocket sync — rooms actually work.
    Players broadcast state via Supabase channel.
 ══════════════════════════════════════════ */
-/* Gun.js P2P multiplayer */
-const MY_ID        = Math.random().toString(36).slice(2, 10);
-const STALE_MS     = 8000;
-const GUN_PEERS    = ['https://gun-relay.glitch.me/gun','https://peer.wallie.io/gun'];
+const SUPA_URL = 'https://zwmsnpfwxigrihwzrmek.supabase.co';
+const SUPA_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3bXNucGZ3eGlncmlod3pybWVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzNDgzMTgsImV4cCI6MjA5NDkyNDMxOH0.gGsXfwA2DH6ios8KkNZuO28mSI1cITAx0t6g5UBnJW0';
 
-let gun            = null;
-let myNode         = null;
-let gunStatus      = 'init';
-let currentRoom    = 'global';
+const MY_ID     = Math.random().toString(36).slice(2, 10);
+const STALE_MS  = 6000;
+
+let supa        = null;
+let supaChannel = null;
+let gunStatus   = 'init';
+let currentRoom = 'global';
 const remotePlayers = new Map();
+let broadcastTimer  = null;
 
 function initGun() {
-  if (gun) return; // already init
   try {
-    gun = Gun({ peers: GUN_PEERS });
-    console.log('[DragonOrb] Gun.js ready ✓');
+    supa = window.supabase.createClient(SUPA_URL, SUPA_KEY);
+    console.log('[DragonOrb] Supabase client created ✓');
   } catch(e) {
-    console.error('[DragonOrb] Gun init failed:', e);
+    console.error('[DragonOrb] Supabase init failed:', e);
     setGunStatus('offline');
   }
 }
 
 function initMultiplayer(roomCode) {
-  // Leave previous room
-  if (myNode) { try { myNode.put({ ts: 0, online: false, cells: '[]' }); } catch(e) {} }
+  // Leave previous channel
+  if (supaChannel) {
+    try { supaChannel.unsubscribe(); } catch(e) {}
+    supaChannel = null;
+  }
   remotePlayers.clear();
   currentRoom = roomCode || 'global';
 
-  if (!gun) { setGunStatus('offline'); return; }
+  if (!supa) { setGunStatus('offline'); return; }
+
   setGunStatus('connecting');
 
-  const roomKey = 'dragonorb-room-v1-' + currentRoom;
-  const room = gun.get(roomKey);
-  myNode = room.get(MY_ID);
-
-  // Announce own presence
-  myNode.put({
-    name:    player ? player.name : 'Dragon',
-    cells:   '[]',
-    palIdx:  currentPalIdx || 0,
-    skinIdx: currentSkinIdx || 0,
-    ts:      Date.now(),
-    online:  true,
+  // Subscribe to presence channel for this room
+  supaChannel = supa.channel('dragonorb:' + currentRoom, {
+    config: { presence: { key: MY_ID } }
   });
 
-  // Listen for other players
-  room.map().on(function(data, key) {
-    if (key === MY_ID || !data || !data.ts) return;
-    const age = Date.now() - (data.ts || 0);
-    if (age > STALE_MS || data.online === false || data.ts === 0) {
+  supaChannel
+    .on('presence', { event: 'sync' }, () => {
+      const state = supaChannel.presenceState();
+      remotePlayers.clear();
+      for (const [peerId, presences] of Object.entries(state)) {
+        if (peerId === MY_ID) continue;
+        const data = presences[0];
+        if (!data) continue;
+        try {
+          remotePlayers.set(peerId, {
+            name:    data.name    || '???',
+            cells:   JSON.parse(data.cells || '[]'),
+            palIdx:  data.palIdx  | 0,
+            skinIdx: data.skinIdx | 0,
+            ts:      data.ts || Date.now(),
+          });
+        } catch(e) {}
+      }
+      updateOnlineDisplay();
+    })
+    .on('presence', { event: 'join' }, ({ key, newPresences }) => {
+      if (key === MY_ID) return;
+      const data = newPresences[0];
+      if (!data) return;
+      try {
+        remotePlayers.set(key, {
+          name:    data.name    || '???',
+          cells:   JSON.parse(data.cells || '[]'),
+          palIdx:  data.palIdx  | 0,
+          skinIdx: data.skinIdx | 0,
+          ts:      data.ts || Date.now(),
+        });
+        if (gunStatus !== 'online') setGunStatus('online');
+        updateOnlineDisplay();
+      } catch(e) {}
+    })
+    .on('presence', { event: 'leave' }, ({ key }) => {
       remotePlayers.delete(key);
       updateOnlineDisplay();
-      return;
-    }
-    try {
-      remotePlayers.set(key, {
-        name:    data.name    || '???',
-        cells:   JSON.parse(data.cells || '[]'),
-        palIdx:  (data.palIdx  || 0) | 0,
-        skinIdx: (data.skinIdx || 0) | 0,
-        ts:      data.ts,
-      });
-      if (gunStatus !== 'online') setGunStatus('online');
-      updateOnlineDisplay();
-    } catch(e) {}
-  });
-
-  // Mark online after brief settle time
-  setTimeout(() => {
-    if (gunStatus === 'connecting') setGunStatus('online');
-  }, 2500);
+    })
+    .subscribe(async (status) => {
+      console.log('[DragonOrb] Channel status:', status);
+      if (status === 'SUBSCRIBED') {
+        setGunStatus('online');
+        // Track own presence
+        await supaChannel.track({
+          name:    player ? player.name : 'Dragon',
+          cells:   '[]',
+          palIdx:  currentPalIdx,
+          skinIdx: currentSkinIdx,
+          ts:      Date.now(),
+        });
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        setGunStatus('offline');
+      }
+    });
 
   // Update URL for room sharing
   try {
@@ -861,10 +890,10 @@ function setGunStatus(s) {
   updateOnlineDisplay();
 }
 
-function broadcastState() {
-  if (!myNode || !player || gunStatus === 'offline') return;
+async function broadcastState() {
+  if (!supaChannel || !player || gunStatus !== 'online') return;
   try {
-    myNode.put({
+    await supaChannel.track({
       name:    player.name,
       cells:   JSON.stringify(player.cells.map(c => ({
         x:  c.x | 0,
@@ -872,18 +901,17 @@ function broadcastState() {
         r:  Math.round(c.r * 10) / 10,
         ea: Math.round(c.eyeAngle * 100) / 100,
       }))),
-      palIdx:  currentPalIdx || 0,
-      skinIdx: currentSkinIdx || 0,
+      palIdx:  currentPalIdx,
+      skinIdx: currentSkinIdx,
       ts:      Date.now(),
-      online:  true,
     });
   } catch(e) {}
 }
 
 function leaveMultiplayer() {
-  if (myNode) {
-    try { myNode.put({ ts: 0, online: false, cells: '[]' }); } catch(e) {}
-    myNode = null;
+  if (supaChannel) {
+    try { supaChannel.untrack(); supaChannel.unsubscribe(); } catch(e) {}
+    supaChannel = null;
   }
   remotePlayers.clear();
 }
@@ -920,48 +948,29 @@ function updateRoomStatus() {
    GLOBAL LEADERBOARD via Supabase
    Persistent Hall of Dragons.
 ══════════════════════════════════════════ */
-function submitGLB(name, coins, kills) {
-  if (!name || coins < 5) return;
-  // Save to localStorage
+async function submitGLB(name, coins, kills) {
+  if (!supa || !name) return;
   try {
-    const lb = JSON.parse(localStorage.getItem('dragonorb_hall_v2') || '{}');
-    if (!lb[name] || lb[name].coins < coins) {
-      lb[name] = { name: name.slice(0,20), coins, kills: kills||0 };
-      localStorage.setItem('dragonorb_hall_v2', JSON.stringify(lb));
-    }
+    await supa.from('dragonorb_hall').upsert({
+      name: name.slice(0, 20),
+      coins,
+      kills: kills || 0,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'name' });
+    loadAndRenderGLB(name);
   } catch(e) {}
-  // Save to Gun.js (shared across players)
-  if (gun) {
-    try {
-      gun.get('dragonorb-hall-v2').get(name.slice(0,20)).put({
-        name: name.slice(0,20), coins, kills: kills||0, ts: Date.now()
-      });
-    } catch(e) {}
-  }
-  setTimeout(() => loadAndRenderGLB(name), 1500);
 }
 
-function loadAndRenderGLB(hlName) {
-  const entries = [];
-  const seen = new Set();
-  // Load from Gun.js (shared leaderboard)
-  if (gun) {
-    gun.get('dragonorb-hall-v2').map().once((data) => {
-      if (!data || !data.name || !data.coins) return;
-      if (!seen.has(data.name)) { seen.add(data.name); entries.push({ name: data.name, coins: data.coins, kills: data.kills||0 }); }
-    });
-  }
-  // Merge with localStorage
+async function loadAndRenderGLB(hlName) {
+  if (!supa) { renderGLB([], hlName || ''); return; }
   try {
-    const lb = JSON.parse(localStorage.getItem('dragonorb_hall_v2') || '{}');
-    for (const e of Object.values(lb)) {
-      if (!seen.has(e.name)) { seen.add(e.name); entries.push(e); }
-    }
-  } catch(e) {}
-  setTimeout(() => {
-    entries.sort((a,b) => b.coins - a.coins);
-    renderGLB(entries.slice(0,10), hlName || '');
-  }, 800);
+    const { data } = await supa
+      .from('dragonorb_hall')
+      .select('name,coins,kills')
+      .order('coins', { ascending: false })
+      .limit(10);
+    renderGLB(data || [], hlName || '');
+  } catch(e) { renderGLB([], hlName || ''); }
 }
 
 function initGLB(name) {
@@ -2438,12 +2447,13 @@ document.getElementById('name-input').addEventListener('keydown',e=>{if(e.key===
 initInput();initMobile();
 try{const n=localStorage.getItem('dragonorb_name');if(n)document.getElementById('name-input').value=n;}catch{}
 renderStatsCard();renderSkinsCard();
-// Boot Gun.js multiplayer
+// Wait for Supabase CDN then init
 function bootMultiplayer() {
-  if (typeof Gun !== 'undefined') {
+  if (typeof window.supabase !== 'undefined') {
     initGun();
     initGLB((()=>{try{return localStorage.getItem('dragonorb_name')||'';}catch{return'';}})());
   } else {
+    // CDN not ready yet, retry
     setTimeout(bootMultiplayer, 200);
   }
 }
