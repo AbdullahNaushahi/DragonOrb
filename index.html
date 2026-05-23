@@ -384,6 +384,35 @@ canvas#gc{display:block;position:fixed;inset:0}
   cursor:pointer;transition:all .2s;letter-spacing:1px}
 .room-btn:hover{background:rgba(100,30,180,.6);border-color:var(--accent)}
 #room-status{font-size:10px;color:var(--muted);text-align:center;margin-top:4px}
+
+/* ══ TUTORIAL TOASTS ══ */
+#tut-toast-wrap{
+  position:fixed;top:42%;left:50%;transform:translate(-50%,-50%);
+  pointer-events:none;z-index:60;
+  width:clamp(260px,72vw,560px);
+  display:flex;align-items:center;justify-content:center;
+}
+.tut-toast{
+  padding:12px 28px;border-radius:14px;
+  font-family:'Georgia','Times New Roman',serif;
+  font-size:clamp(13px,3.2vw,16px);letter-spacing:1.6px;
+  color:#f0e0ff;
+  background:linear-gradient(135deg,rgba(28,7,58,.97),rgba(58,14,98,.97));
+  border:1px solid rgba(180,100,255,.55);
+  box-shadow:0 0 36px rgba(140,50,230,.5),inset 0 0 18px rgba(100,30,180,.12);
+  text-align:center;white-space:nowrap;opacity:0;
+  position:absolute;top:0;left:50%;transform:translateX(-50%);
+}
+.tut-toast.tut-in{animation:tutIn .45s ease forwards}
+.tut-toast.tut-out{animation:tutOut .45s ease forwards}
+@keyframes tutIn{
+  from{opacity:0;transform:translateX(-50%) translateY(10px)}
+  to{opacity:1;transform:translateX(-50%) translateY(0)}
+}
+@keyframes tutOut{
+  from{opacity:1;transform:translateX(-50%) translateY(0)}
+  to{opacity:0;transform:translateX(-50%) translateY(-8px)}
+}
 </style>
 </head>
 <body>
@@ -450,6 +479,13 @@ canvas#gc{display:block;position:fixed;inset:0}
     <div id="fire-btn-bar"><div id="fire-btn-fill"></div></div>
     <span id="fire-cd-mob">READY</span>
   </button>
+</div>
+
+<!-- Tutorial Toasts -->
+<div id="tut-toast-wrap">
+  <div class="tut-toast" id="tut-1"></div>
+  <div class="tut-toast" id="tut-2"></div>
+  <div class="tut-toast" id="tut-3"></div>
 </div>
 
 <div id="overlay">
@@ -875,11 +911,7 @@ function updateOnlineDisplay(){
 }
 
 /* ══════════════════════════════════════════
-   CONSTANTS  —  MOBILE PATCHES APPLIED:
-   • BOT_COUNT:  mobile 45 → 90
-   • FOOD_COUNT: mobile 3800 → 5500
-   • BASE_SPD:   mobile 128 → 160  (+25%)
-   • MIN_SPD:    mobile 0.28 → 0.38 (faster minimum)
+   CONSTANTS
 ══════════════════════════════════════════ */
 const MAP_SIZE=10000,GRID_CELL=260;
 const isMobile=/Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)||'ontouchstart' in window;
@@ -1568,7 +1600,6 @@ function drawMinimap(){
   const MS=140,sc=MS/MAP_SIZE;
   mc.clearRect(0,0,MS,MS);mc.fillStyle='rgba(4,2,14,.95)';mc.fillRect(0,0,MS,MS);
   mc.fillStyle='rgba(130,80,190,.3)';for(let i=0;i<food.length;i+=12)mc.fillRect(food[i].x*sc-.6,food[i].y*sc-.6,1.4,1.4);
-  /* PATCH: bigger bot dots on mobile minimap for visibility */
   for(const b of bots){if(b.dead)continue;mc.fillStyle=b.palette.hi;mc.beginPath();mc.arc(b.x*sc,b.y*sc,Math.max(isMobile?2.5:1.5,b.r*sc*(isMobile?2.8:1.8)),0,Math.PI*2);mc.fill();}
   for(const[,rp] of remotePlayers){if(!rp.cells)continue;mc.fillStyle='#4ade80';mc.shadowColor='#4ade80';mc.shadowBlur=4;for(const rc of rp.cells){mc.beginPath();mc.arc(rc.x*sc,rc.y*sc,Math.max(2.5,rc.r*sc*2),0,Math.PI*2);mc.fill();}mc.shadowBlur=0;}
   if(player){mc.fillStyle='#c084fc';mc.shadowColor='#c084fc';mc.shadowBlur=5;for(const c of player.cells){mc.beginPath();mc.arc(c.x*sc,c.y*sc,Math.max(2.5,c.r*sc*2.2),0,Math.PI*2);mc.fill();}mc.shadowBlur=0;
@@ -1873,6 +1904,127 @@ function initMobile(){
     e.preventDefault();e.stopPropagation();releaseFire();
   },{passive:false});
 }
+
+/* ══════════════════════════════════════════
+   TUTORIAL TOAST SYSTEM
+   3 non-blocking hints shown during first game only.
+
+   Desktop sequence:
+     Toast 1 @ 2s  — "🖱️ Move your mouse to fly"
+     Toast 2 @ 5s  — "W key to Split · Devour smaller dragons!"
+     Toast 3 @ proximity to big bot — "🔥 Hold SPACE — Fire Breath! Stun big dragons!"
+
+   Mobile sequence (same timing):
+     Toast 1 @ 2s  — "Drag left side to move"
+     Toast 2 @ 5s  — "SPLIT button to divide"
+     Toast 3 @ proximity — "Hold 🔥 button to breathe fire!"
+
+   Each toast fades in (0.45s), stays visible 3s, fades out (0.45s).
+   After toast 3 fires, the tutorial is marked done in localStorage
+   and will never show again.
+══════════════════════════════════════════ */
+(function initTutorial() {
+  const TUT_KEY = 'dragonorb_tut_v1';
+  let tutDone = false;
+  try { tutDone = !!localStorage.getItem(TUT_KEY); } catch(e) {}
+
+  // Desktop and mobile message sets
+  const MSGS_DESKTOP = [
+    '\uD83D\uDDA5\uFE0F Move your mouse to fly',
+    'W key to Split \xB7 Devour smaller dragons!',
+    '\uD83D\uDD25 Hold SPACE \u2014 Fire Breath! Stun big dragons!'
+  ];
+  const MSGS_MOBILE = [
+    'Drag left side to move',
+    'SPLIT button to divide',
+    'Hold \uD83D\uDD25 button to breathe fire!'
+  ];
+
+  // Per-session state
+  let msgs = isMobile ? MSGS_MOBILE : MSGS_DESKTOP;
+  let t1Done = false, t2Done = false, t3Done = false;
+  let sessActive = false;
+
+  /* Show a single toast by index (0-based).
+     The 3 toast elements sit stacked at the same position;
+     only one is ever visible at a time. */
+  function showTut(idx, text) {
+    const el = document.getElementById('tut-' + (idx + 1));
+    if (!el) return;
+    // Reset state cleanly
+    el.className = 'tut-toast';
+    el.textContent = text;
+    void el.offsetWidth; // force reflow so animation restarts
+    el.classList.add('tut-in');
+    // After 3 seconds visible, fade out
+    setTimeout(function() {
+      el.classList.remove('tut-in');
+      el.classList.add('tut-out');
+      setTimeout(function() { el.className = 'tut-toast'; }, 460);
+    }, 3000);
+  }
+
+  /* Patch startGame so tutorial resets each new game
+     (but respects the "already done" localStorage flag). */
+  const _origStartGame = window.startGame;
+  window.startGame = function() {
+    t1Done = false; t2Done = false; t3Done = false; sessActive = true;
+    try { tutDone = !!localStorage.getItem(TUT_KEY); } catch(e) {}
+    _origStartGame.apply(this, arguments);
+  };
+
+  /* Patch the main loop to inject tutorial checks each frame.
+     We simply call the original loop then do our own checks —
+     zero impact on gameplay, no timing changes. */
+  const _origLoop = window.loop;
+  window.loop = function(ts) {
+    _origLoop.call(this, ts);
+
+    // Guard: only run while a live session is active and tutorial not done
+    if (!running || !sessActive || tutDone) return;
+    if (!player || !player.cells || player.cells.length === 0) return;
+
+    const elapsed = sessionTime;
+
+    // Toast 1: 2 seconds after spawn
+    if (!t1Done && elapsed >= 2.0) {
+      t1Done = true;
+      showTut(0, msgs[0]);
+    }
+
+    // Toast 2: 5 seconds after spawn
+    if (!t2Done && elapsed >= 5.0) {
+      t2Done = true;
+      showTut(1, msgs[1]);
+    }
+
+    // Toast 3: first time player is near a bot that is bigger than them
+    if (!t3Done) {
+      const mainCell = player.cells[0];
+      for (let i = 0; i < bots.length; i++) {
+        const b = bots[i];
+        if (b.dead) continue;
+        // Bot must be meaningfully larger (80% of player radius threshold)
+        if (b.r > mainCell.r * 0.80) {
+          const dx = b.x - mainCell.x;
+          const dy = b.y - mainCell.y;
+          const proximityThresh = b.r + mainCell.r + 220;
+          if (dx * dx + dy * dy < proximityThresh * proximityThresh) {
+            t3Done = true;
+            showTut(2, msgs[2]);
+            // Tutorial fully complete — mark in localStorage & stop checking
+            sessActive = false;
+            try {
+              localStorage.setItem(TUT_KEY, '1');
+              tutDone = true;
+            } catch(e) {}
+            break;
+          }
+        }
+      }
+    }
+  };
+})();
 
 /* ══════════════════════════════════════════
    BOOT
