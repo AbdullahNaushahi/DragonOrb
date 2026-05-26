@@ -5,6 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 <title>DragonOrb.io — Devour Everything</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+<!-- CrazyGames SDK -->
+<script src="https://sdk.crazygames.com/crazygames-sdk-v3.js"></script>
 <style>
 *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -172,6 +175,7 @@ canvas#gc{display:block;position:fixed;inset:0}
   touch-action:none;
 }
 
+#joy-ring2.visible{opacity:1}
 #joy-ring{
   position:absolute;
   width:100px;height:100px;
@@ -385,7 +389,106 @@ canvas#gc{display:block;position:fixed;inset:0}
 .room-btn:hover{background:rgba(100,30,180,.6);border-color:var(--accent)}
 #room-status{font-size:10px;color:var(--muted);text-align:center;margin-top:4px}
 
-/* ══ TUTORIAL TOASTS ══ */
+/* ══ SPLIT SCREEN ══ */
+/* #gc2 position/size set entirely by JS — no CSS left/width here to avoid conflicts */
+/* In split mode, P1 HUD stays in left half (fix #27) */
+body.split-active #stats-bar{max-width:calc(50vw - 20px)}
+body.split-active #coins-bar{max-width:calc(50vw - 20px)}
+#gc2{display:none;position:fixed;top:0;height:100%;z-index:1}
+#split-divider{display:none;position:fixed;top:0;left:50%;width:3px;height:100%;
+  background:linear-gradient(180deg,transparent,rgba(192,132,252,.8),rgba(255,120,0,.6),rgba(192,132,252,.8),transparent);
+  z-index:12;box-shadow:0 0 18px rgba(192,132,252,.6)}
+/* p2-stats sits above minimap on right side of P2 half */
+#p2-stats{display:none;position:fixed;top:10px;padding:6px 12px;
+  font-size:clamp(10px,2.5vw,12px);z-index:10}
+#p2-label{position:fixed;top:50%;left:25%;transform:translate(-50%,-50%);
+  pointer-events:none;z-index:15;display:none;
+  font-size:11px;letter-spacing:3px;color:rgba(192,132,252,.45);text-transform:uppercase}
+#p2-label-right{position:fixed;top:50%;left:75%;transform:translate(-50%,-50%);
+  pointer-events:none;z-index:15;display:none;
+  font-size:11px;letter-spacing:3px;color:rgba(255,120,0,.45);text-transform:uppercase}
+
+/* ══ CHALLENGE MODE ══ */
+#challenge-banner{position:fixed;top:0;left:0;right:0;z-index:95;pointer-events:none;
+  background:linear-gradient(90deg,rgba(10,3,30,.95),rgba(60,10,10,.95),rgba(10,3,30,.95));
+  border-bottom:1px solid rgba(245,200,66,.35);padding:8px 16px;
+  display:none;align-items:center;justify-content:space-between;gap:8px}
+#challenge-banner.show{display:flex}
+#ch-label{font-size:11px;letter-spacing:2px;color:var(--gold);text-transform:uppercase}
+#ch-leader{font-size:12px;color:var(--accent);font-weight:bold}
+#ch-status{font-size:11px;color:var(--muted)}
+#challenge-win{position:fixed;inset:0;z-index:200;pointer-events:none;
+  background:rgba(0,0,0,.82);display:none;align-items:center;justify-content:center;flex-direction:column;gap:12px}
+#challenge-win.show{display:flex}
+#cw-title{font-size:clamp(28px,7vw,52px);font-weight:bold;letter-spacing:4px;
+  color:var(--gold);text-shadow:0 0 60px var(--gold);text-transform:uppercase}
+#cw-sub{font-size:clamp(13px,3vw,18px);color:var(--accent);letter-spacing:2px}
+#cw-btn{margin-top:16px;background:linear-gradient(135deg,#5b21b6,#9333ea);
+  border:none;border-radius:8px;padding:12px 40px;color:#f0e0ff;font-size:15px;
+  cursor:pointer;pointer-events:all;font-family:'Georgia',serif;letter-spacing:2px;text-transform:uppercase}
+
+/* ══ CHALLENGE LOBBY OVERLAY ══ */
+#ch-lobby{position:fixed;inset:0;z-index:150;display:none;
+  background:radial-gradient(ellipse at center,rgba(20,5,40,.97),rgba(3,1,10,.99));
+  flex-direction:column;align-items:center;justify-content:center;gap:16px}
+#ch-lobby.show{display:flex}
+#ch-lobby h2{font-size:clamp(20px,5vw,32px);color:var(--gold);letter-spacing:3px;text-transform:uppercase;
+  text-shadow:0 0 30px var(--gold)}
+#ch-lobby-sub{font-size:13px;color:var(--muted);letter-spacing:2px}
+#ch-lobby-code{font-size:clamp(22px,5vw,36px);letter-spacing:8px;color:var(--accent);
+  background:rgba(80,20,140,.4);border:1px solid var(--border);border-radius:8px;
+  padding:10px 28px;font-family:'Georgia',serif;cursor:pointer;transition:box-shadow .2s}
+#ch-lobby-code:hover{box-shadow:0 0 20px rgba(192,132,252,.4)}
+#ch-lobby-players{width:clamp(260px,60vw,480px);background:rgba(6,2,18,.9);
+  border:1px solid var(--border);border-radius:10px;padding:14px 18px}
+#ch-lobby-players h4{font-size:9px;letter-spacing:2px;text-transform:uppercase;
+  color:var(--accent);margin-bottom:10px;border-bottom:1px solid var(--border);padding-bottom:6px}
+.ch-lobby-player{display:flex;align-items:center;justify-content:space-between;
+  font-size:12px;padding:4px 0;color:var(--text)}
+.ch-lobby-player .ready-dot{width:8px;height:8px;border-radius:50%;background:#facc15;
+  box-shadow:0 0 6px #facc15;margin-right:8px}
+.ch-lobby-player .ready-dot.go{background:#4ade80;box-shadow:0 0 6px #4ade80}
+#ch-lobby-countdown{font-size:clamp(28px,8vw,64px);color:var(--gold);font-weight:bold;
+  text-shadow:0 0 40px var(--gold);display:none;letter-spacing:4px}
+#ch-start-btn{background:linear-gradient(135deg,#5b21b6,#9333ea,#7e22ce);border:none;
+  border-radius:8px;padding:12px 48px;color:#f0e0ff;font-size:16px;cursor:pointer;
+  font-family:'Georgia',serif;letter-spacing:3px;text-transform:uppercase;
+  box-shadow:0 0 30px rgba(147,51,234,.4);transition:all .2s}
+#ch-start-btn:hover{transform:scale(1.05);box-shadow:0 0 50px rgba(147,51,234,.65)}
+#ch-start-btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+#ch-invite-tip{font-size:10px;color:var(--muted);letter-spacing:1px}
+#ch-min-warn{font-size:11px;color:#f87171;letter-spacing:1px;display:none}
+
+/* ══ SKIN SELECT ══ */
+.sk-item{display:flex;align-items:center;gap:6px;font-size:11px;padding:3px 6px;
+  color:var(--muted);border-radius:6px;cursor:default;transition:background .15s}
+.sk-item.unlocked{color:var(--gold);cursor:pointer}
+.sk-item.unlocked:hover{background:rgba(120,50,200,.25)}
+.sk-item.equipped{background:rgba(120,50,200,.4);color:#fff;
+  outline:1px solid var(--accent)}
+.sk-dot{width:6px;height:6px;border-radius:50%;background:rgba(100,70,140,.4);flex-shrink:0}
+.sk-item.unlocked .sk-dot{background:var(--gold);box-shadow:0 0 4px var(--gold)}
+.sk-item.equipped .sk-dot{background:#fff;box-shadow:0 0 6px #fff}
+
+/* ══ TOAST STACKING FIX ══ */
+#skin-toast{top:120px}
+#pb-badge{top:70px}
+/* rank1-toast keeps its 35% position */
+
+/* ══ CHALLENGE BANNER — push stats-bar down ══ */
+body.challenge-active #stats-bar{top:48px}
+
+.p2-skin-btn{background:rgba(40,15,70,.7);border:2px solid rgba(100,50,160,.4);border-radius:8px;
+  padding:5px 9px;cursor:pointer;font-size:14px;transition:all .15s;color:var(--text);font-family:'Georgia',serif;letter-spacing:0}
+.p2-skin-btn:hover{border-color:rgba(255,150,80,.6);background:rgba(80,30,20,.7)}
+.p2-skin-btn.p2-skin-active{border-color:rgba(255,150,80,.9);background:rgba(100,40,0,.8);box-shadow:0 0 12px rgba(255,120,0,.4)}
+.mode-tabs{display:flex;gap:8px;margin-bottom:14px;justify-content:center}
+.mode-tab{background:rgba(40,10,80,.6);border:1px solid var(--border);border-radius:8px;
+  padding:8px 18px;color:var(--muted);font-size:11px;font-family:'Georgia',serif;
+  cursor:pointer;transition:all .2s;letter-spacing:1px}
+.mode-tab.active{background:rgba(80,20,140,.8);border-color:var(--accent);color:var(--text)}
+.mode-tab:hover{border-color:var(--muted)}
+
 #tut-toast-wrap{
   position:fixed;top:42%;left:50%;transform:translate(-50%,-50%);
   pointer-events:none;z-index:60;
@@ -417,6 +520,53 @@ canvas#gc{display:block;position:fixed;inset:0}
 </head>
 <body>
 <canvas id="gc"></canvas>
+<canvas id="gc2"></canvas>
+<div id="split-divider"></div>
+<div id="p2-label">◀ PLAYER 1</div>
+<div id="p2-label-right">PLAYER 2 ▶</div>
+<div id="p2-stats" class="hp">
+  <div class="sl"><span class="lbl">P2 Mass</span><span class="val" id="p2-sm">0</span></div>
+  <div class="sl"><span class="lbl">P2 Rank</span><span class="val" id="p2-sr">#–</span></div>
+</div>
+<div id="challenge-banner">
+  <span id="ch-label">⚔ Race to #1</span>
+  <span id="ch-leader">Waiting…</span>
+  <span id="ch-status"></span>
+</div>
+<div id="challenge-win">
+  <div id="cw-title">👑 REALM CONQUERED</div>
+  <div id="cw-sub"></div>
+  <button id="cw-btn" onclick="dismissChallengeWin()">Play Again</button>
+</div>
+<!-- Challenge Lobby -->
+<div id="ch-lobby">
+  <h2>⚔ Challenge Lobby</h2>
+  <div id="ch-lobby-sub">Share the room code — host starts when ready</div>
+  <div id="ch-lobby-code" onclick="copyLobbyCode()" title="Click to copy">------</div>
+  <div id="ch-invite-tip">🔗 Click code to copy invite link</div>
+  <div id="ch-lobby-players">
+    <h4>👥 Players in Room</h4>
+    <div id="ch-player-list"></div>
+  </div>
+  <div id="ch-min-warn">Need at least 2 players to start</div>
+  <button id="ch-start-btn" onclick="startChallengeMatch()">▶ START MATCH</button>
+  <div id="ch-lobby-countdown"></div>
+</div>
+<!-- P2 mobile touch controls for split screen -->
+<div id="mob2" style="display:none;position:fixed;inset:0;pointer-events:none;z-index:20">
+  <div id="right-zone" style="position:absolute;right:0;top:0;width:52%;height:100%;pointer-events:all;touch-action:none;">
+    <div id="joy-ring2" style="position:absolute;width:100px;height:100px;border-radius:50%;border:2px solid rgba(255,120,0,.5);background:rgba(130,50,0,.12);pointer-events:none;transform:translate(-50%,-50%);opacity:0;transition:opacity .15s;">
+      <div id="joy-thumb2" style="position:absolute;width:42px;height:42px;border-radius:50%;background:radial-gradient(circle at 35% 35%,rgba(255,180,80,.8),rgba(180,80,0,.6));border:2px solid rgba(255,180,80,.9);pointer-events:none;transform:translate(-50%,-50%);box-shadow:0 0 12px rgba(255,120,0,.5);"></div>
+    </div>
+  </div>
+  <button id="btn-split2" style="position:absolute;bottom:196px;left:16px;width:72px;height:34px;border-radius:20px;background:rgba(100,40,0,.7);border:1.5px solid rgba(255,150,0,.55);color:#ffb060;font-size:11px;font-weight:bold;font-family:'Georgia',serif;pointer-events:all;touch-action:none;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;letter-spacing:1px;">✦ SPLIT</button>
+  <button id="btn-fire2" style="position:absolute;bottom:16px;left:16px;width:170px;height:165px;border-radius:26px;background:radial-gradient(circle at 40% 35%,rgba(255,110,0,.22),rgba(120,20,0,.55));border:2px solid rgba(255,120,0,.5);box-shadow:0 0 22px rgba(255,80,0,.28);color:#ffe0a0;font-family:'Georgia',serif;pointer-events:all;touch-action:none;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:4px;cursor:pointer;-webkit-tap-highlight-color:transparent;user-select:none;">
+    <span style="font-size:38px;line-height:1">🔥</span>
+    <span style="font-size:11px;letter-spacing:2px;text-transform:uppercase;color:rgba(255,180,80,.8)">P2 Fire</span>
+    <div style="width:130px;height:6px;background:rgba(255,80,0,.15);border-radius:3px;overflow:hidden;margin-top:2px;"><div id="fire-btn-fill2" style="height:100%;width:0%;border-radius:3px;background:linear-gradient(90deg,#ff6a00,#ee0979);transition:none;"></div></div>
+  </button>
+</div>
+
 <div id="danger-ring"></div>
 <div id="nearmiss">✦ CLOSE CALL ✦</div>
 <div id="streak-toast"><div class="st-label"></div><div class="st-sub"></div></div>
@@ -493,14 +643,28 @@ canvas#gc{display:block;position:fixed;inset:0}
   <div class="os">— Dark Fantasy Arena —</div>
   <div class="tagline">You are a Dragon. Devour everything.</div>
   <input id="name-input" type="text" placeholder="Name your dragon…" maxlength="16" autocomplete="off">
+  <div class="mode-tabs">
+    <button class="mode-tab active" id="tab-solo" onclick="setMode('solo')">⚔ Solo</button>
+    <button class="mode-tab" id="tab-split" onclick="setMode('split')">👥 Split Screen</button>
+    <button class="mode-tab" id="tab-challenge" onclick="setMode('challenge')">🏆 Challenge</button>
+  </div>
+  <div id="p2-name-row" style="display:none;margin-bottom:10px;flex-direction:column;align-items:center;gap:8px">
+    <input id="p2-name-input" type="text" placeholder="Player 2 name…" maxlength="16" autocomplete="off"
+      style="background:rgba(20,8,40,.9);border:1px solid rgba(255,120,0,.5);border-radius:8px;padding:10px 20px;color:#ffd0a0;font-size:15px;width:min(260px,80vw);text-align:center;outline:none;font-family:'Georgia',serif;letter-spacing:1px">
+    <div id="p2-skin-row" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;justify-content:center">
+      <span style="font-size:10px;letter-spacing:1px;color:rgba(255,150,80,.6);text-transform:uppercase">P2 Dragon:</span>
+      <div id="p2-skin-picker" style="display:flex;gap:5px;flex-wrap:wrap;justify-content:center"></div>
+    </div>
+  </div>
   <button id="play-btn" onclick="startGame()">ENTER THE REALM</button>
-  <div class="ch">
+  <div class="ch" id="controls-hint">
     <span class="fire-hint">Hold SPACE</span> to breathe fire &nbsp;·&nbsp; <span>W</span> to split &nbsp;·&nbsp; Devour everything
   </div>
   <div id="room-bar">
     <input id="room-input" type="text" maxlength="8" placeholder="Room code (optional)" autocomplete="off">
     <button class="room-btn" onclick="joinRoom()">Join</button>
     <button class="room-btn" onclick="createRoom()">Create Room</button>
+    <button class="room-btn" id="invite-link-btn" onclick="copyInviteLink()" style="display:none">🔗 Invite Link</button>
   </div>
   <div id="room-status"></div>
   <div id="run-strip"></div>
@@ -523,6 +687,163 @@ canvas#gc{display:block;position:fixed;inset:0}
 
 <script>
 'use strict';
+
+/* ══════════════════════════════════════════
+   CRAZYGAMES SDK INTEGRATION  (v3)
+   Docs: https://docs.crazygames.com/sdk/intro/
+══════════════════════════════════════════ */
+const CG = (() => {
+  let sdk = null;
+  let ready = false;
+  let locale = 'en';
+  let adInProgress = false;
+
+  // Init as soon as the SDK script has loaded.
+  // The SDK v3 requires an explicit await sdk.init() before any calls.
+  async function init() {
+    try {
+      if (!window.CrazyGames || !window.CrazyGames.SDK) return;
+      sdk = window.CrazyGames.SDK;
+      await sdk.init();
+      ready = true;
+      // systemInfo is a plain property after init (v3 API — NOT a method).
+      // The docs say: use the 'locale' field (e.g. "en-US") for language, not countryCode.
+      try {
+        const si = sdk.user.systemInfo;
+        if (si && si.locale) locale = si.locale.split('-')[0].toLowerCase(); // e.g. "en-US" → "en"
+      } catch(e) {}
+    } catch(e) {}
+  }
+
+  function gameplayStart() {
+    try { if (ready && !adInProgress) sdk.game.gameplayStart(); } catch(e) {}
+  }
+  function gameplayStop() {
+    try { if (ready) sdk.game.gameplayStop(); } catch(e) {}
+  }
+
+  // requestAd uses the v3 callback API.
+  // Per CrazyGames docs: only mute audio when ad ACTUALLY starts (adStarted),
+  // not at request time — the ad may be unfilled and music stopping with no visual is bad UX.
+  // Also: block the UI until adFinished or adError so user can't click buttons mid-ad.
+  function requestAd(type) {
+    if (!ready || adInProgress) return;
+    adInProgress = true;
+    // Do NOT stop audio here — wait for adStarted callback
+
+    const callbacks = {
+      adStarted: () => {
+        // Ad is actually showing now — mute all audio
+        try { if (window.AMBIENT && AMBIENT.isRunning()) AMBIENT.stop(); } catch(e) {}
+        // Block the overlay UI so no buttons can be clicked during the ad
+        try {
+          const ov = document.getElementById('overlay');
+          if (ov) { ov.style.pointerEvents = 'none'; ov.style.opacity = '0.4'; }
+        } catch(e) {}
+      },
+      adFinished: () => {
+        adInProgress = false;
+        // Unblock UI
+        try {
+          const ov = document.getElementById('overlay');
+          if (ov) { ov.style.pointerEvents = ''; ov.style.opacity = ''; }
+        } catch(e) {}
+      },
+      adError: () => {
+        adInProgress = false;
+        // Ad failed / adblock / cooldown — silently continue, unblock UI
+        try {
+          const ov = document.getElementById('overlay');
+          if (ov) { ov.style.pointerEvents = ''; ov.style.opacity = ''; }
+        } catch(e) {}
+      },
+    };
+    try {
+      sdk.ad.requestAd(type || 'midgame', callbacks);
+    } catch(e) {
+      adInProgress = false;
+    }
+  }
+
+  function getLocale() { return locale; }
+  function isReady() { return ready; }
+
+  // Kick off init. If the SDK script hasn't executed yet, wait for it.
+  if (window.CrazyGames && window.CrazyGames.SDK) {
+    init().then(() => declareLobbySize());
+  } else {
+    // Retry until the SDK script tag has loaded (max ~3s)
+    let attempts = 0;
+    const iv = setInterval(() => {
+      attempts++;
+      if (window.CrazyGames && window.CrazyGames.SDK) { clearInterval(iv); init().then(() => declareLobbySize()); }
+      else if (attempts > 30) clearInterval(iv);
+    }, 100);
+  }
+
+  // Update room — call whenever player joins/creates a room
+  // isJoinable: true when room accepts new players
+  function updateRoom(roomId, isJoinable, inviteParams) {
+    try {
+      if (!ready) return;
+      sdk.game.updateRoom({
+        roomId: roomId || 'global',
+        isJoinable: isJoinable !== false,
+        inviteParams: inviteParams || {}
+      });
+    } catch(e) {}
+  }
+
+  // Get invite link — returns a URL the player can share
+  async function getInviteLink(inviteParams) {
+    try {
+      if (!ready) return null;
+      const link = await sdk.game.getInviteLink(inviteParams || {});
+      return link;
+    } catch(e) { return null; }
+  }
+
+  // Check if this session was launched as instant multiplayer
+  // If true, skip menu and jump straight into a room
+  function isInstantMultiplayer() {
+    try {
+      if (!ready) return false;
+      return sdk.game.isInstantMultiplayer === true;
+    } catch(e) { return false; }
+  }
+
+  // Room join listener — fires when a friend joins via CrazyGames UI
+  // callback receives { roomId, inviteParams }
+  function addRoomJoinListener(callback) {
+    try {
+      if (!ready) return;
+      sdk.game.addRoomJoinListener(callback);
+    } catch(e) {}
+  }
+
+  // ── Lobby Size (CrazyGames multiplayer) ──────────────────────────
+  // Declare min/max players once after SDK init so CrazyGames knows
+  // this game's lobby capacity (2 min, 10 max).
+  const LOBBY_MIN = 2;
+  const LOBBY_MAX = 10;
+
+  function declareLobbySize() {
+    try {
+      if (!ready) return;
+      // SDK v3: sdk.game.multiplayer.setPlayerRange if available
+      if (sdk.game && sdk.game.multiplayer && sdk.game.multiplayer.setPlayerRange) {
+        sdk.game.multiplayer.setPlayerRange(LOBBY_MIN, LOBBY_MAX);
+      }
+    } catch(e) {}
+  }
+
+  function getLobbyMax() { return LOBBY_MAX; }
+  function getLobbyMin() { return LOBBY_MIN; }
+
+  return { gameplayStart, gameplayStop, requestAd, getLocale, isReady,
+           updateRoom, getInviteLink, isInstantMultiplayer, addRoomJoinListener,
+           getLobbyMin, getLobbyMax, declareLobbySize };
+})();
 
 /* ══════════════════════════════════════════
    AUDIO ENGINE
@@ -779,56 +1100,85 @@ function writeSave(d){try{localStorage.setItem(SK,JSON.stringify(d));}catch{}}
 let SD=loadSave();
 
 /* ══════════════════════════════════════════
-   SUPABASE MULTIPLAYER
+   ABLY MULTIPLAYER (replaces Supabase realtime)
+   Supabase is still used for global leaderboard only.
 ══════════════════════════════════════════ */
+const ABLY_KEY='7s6jFw.1Im0_g:RhtTkiLxT5VCAQoFTwuWUMUBemNE4UMaN2AwZdIzxNM';
 const SUPA_URL='https://zwmsnpfwxigrihwzrmek.supabase.co';
 const SUPA_KEY='eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp3bXNucGZ3eGlncmlod3pybWVrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzkzNDgzMTgsImV4cCI6MjA5NDkyNDMxOH0.gGsXfwA2DH6ios8KkNZuO28mSI1cITAx0t6g5UBnJW0';
 const MY_ID=Math.random().toString(36).slice(2,10);
 const STALE_MS=6000;
-let supa=null,supaChannel=null,gunStatus='init',currentRoom='global';
+let supa=null,ablyClient=null,ablyChannel=null,gunStatus='init',currentRoom='global';
 const remotePlayers=new Map();
-let broadcastTimer=null;
 
 function initGun(){
   if(supa)return;
-  try{supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);}
-  catch(e){setGunStatus('offline');}
+  try{supa=window.supabase.createClient(SUPA_URL,SUPA_KEY);}catch(e){}
 }
+
 function initMultiplayer(roomCode){
-  if(supaChannel){try{supaChannel.unsubscribe();}catch(e){}supaChannel=null;}
-  remotePlayers.clear();currentRoom=roomCode||'global';
-  if(!supa){setGunStatus('offline');return;}
+  // Tear down old Ably channel
+  if(ablyChannel){try{ablyChannel.presence.leave();ablyChannel.unsubscribe();}catch(e){}ablyChannel=null;}
+  if(ablyClient){try{ablyClient.close();}catch(e){}ablyClient=null;}
+  remotePlayers.clear();
+  currentRoom=roomCode||'global';
   setGunStatus('connecting');
-  supaChannel=supa.channel('dragonorb:'+currentRoom,{config:{presence:{key:MY_ID}}});
-  supaChannel
-    .on('presence',{event:'sync'},()=>{
-      const state=supaChannel.presenceState();remotePlayers.clear();
-      for(const[peerId,presences] of Object.entries(state)){
-        if(peerId===MY_ID)continue;const data=presences[0];if(!data)continue;
-        try{remotePlayers.set(peerId,{name:data.name||'???',cells:JSON.parse(data.cells||'[]'),palIdx:data.palIdx|0,skinIdx:data.skinIdx|0,ts:data.ts||Date.now()});}catch(e){}
-      }
-      updateOnlineDisplay();
-    })
-    .on('presence',{event:'join'},({key,newPresences})=>{
-      if(key===MY_ID)return;const data=newPresences[0];if(!data)return;
-      try{remotePlayers.set(key,{name:data.name||'???',cells:JSON.parse(data.cells||'[]'),palIdx:data.palIdx|0,skinIdx:data.skinIdx|0,ts:data.ts||Date.now()});
-        if(gunStatus!=='online')setGunStatus('online');updateOnlineDisplay();}catch(e){}
-    })
-    .on('presence',{event:'leave'},({key})=>{remotePlayers.delete(key);updateOnlineDisplay();})
-    .subscribe(async(status)=>{
-      if(status==='SUBSCRIBED'){
-        setGunStatus('online');
-        await supaChannel.track({name:player?player.name:'Dragon',cells:'[]',palIdx:currentPalIdx,skinIdx:currentSkinIdx,ts:Date.now()});
-      } else if(status==='CHANNEL_ERROR'||status==='TIMED_OUT'){setGunStatus('offline');}
+
+  try{
+    ablyClient=new Ably.Realtime({key:ABLY_KEY,clientId:MY_ID});
+    ablyClient.connection.on('connected',()=>{
+      setGunStatus('online');
+      ablyChannel=ablyClient.channels.get('dragonorb:'+currentRoom);
+
+      // Subscribe to presence (other players joining/leaving/updating)
+      ablyChannel.presence.subscribe('enter',msg=>{
+        if(msg.clientId===MY_ID)return;
+        try{const d=msg.data;remotePlayers.set(msg.clientId,{name:d.name||'???',cells:d.cells||[],palIdx:d.palIdx|0,skinIdx:d.skinIdx|0,ts:Date.now()});updateOnlineDisplay();}catch(e){}
+      });
+      ablyChannel.presence.subscribe('update',msg=>{
+        if(msg.clientId===MY_ID)return;
+        try{const d=msg.data;remotePlayers.set(msg.clientId,{name:d.name||'???',cells:d.cells||[],palIdx:d.palIdx|0,skinIdx:d.skinIdx|0,ts:Date.now()});updateOnlineDisplay();}catch(e){}
+      });
+      ablyChannel.presence.subscribe('leave',msg=>{
+        remotePlayers.delete(msg.clientId);updateOnlineDisplay();
+      });
+
+      // Subscribe to challenge broadcast events
+      ablyChannel.subscribe('challenge_win',msg=>{
+        if(challengeMode&&msg.data&&msg.data.winner){
+          showChallengeWin(msg.data.winner,false);
+        }
+      });
+
+      // Enter presence with initial state
+      ablyChannel.presence.enter({name:player?player.name:'Dragon',cells:[],palIdx:currentPalIdx||0,skinIdx:currentSkinIdx||0});
+
+      // Get existing members
+      ablyChannel.presence.get((err,members)=>{
+        if(err||!members)return;
+        members.forEach(m=>{
+          if(m.clientId===MY_ID)return;
+          try{const d=m.data;remotePlayers.set(m.clientId,{name:d.name||'???',cells:d.cells||[],palIdx:d.palIdx|0,skinIdx:d.skinIdx|0,ts:Date.now()});}catch(e){}
+        });
+        updateOnlineDisplay();
+      });
     });
+    ablyClient.connection.on('disconnected',()=>setGunStatus('offline'));
+    ablyClient.connection.on('failed',()=>setGunStatus('offline'));
+  }catch(e){setGunStatus('offline');}
+
   try{
     const u=new URL(window.location.href);
-    if(currentRoom!=='global')u.searchParams.set('room',currentRoom);
-    else u.searchParams.delete('room');
+    const params={};
+    if(currentRoom!=='global')params.room=currentRoom;
+    if(challengeMode)params.challenge='1';
+    Object.keys(params).length?Object.entries(params).forEach(([k,v])=>u.searchParams.set(k,v)):['room','challenge'].forEach(k=>u.searchParams.delete(k));
     history.replaceState(null,'',u.toString());
   }catch(e){}
+  CG.updateRoom(currentRoom, true, { room: currentRoom });
   updateRoomStatus();
 }
+
 function setGunStatus(s){
   gunStatus=s;const badge=document.getElementById('conn-badge');
   badge.className='show '+s;
@@ -836,18 +1186,25 @@ function setGunStatus(s){
   setTimeout(()=>{if(s==='online')badge.classList.remove('show');},3000);
   updateOnlineDisplay();
 }
+
 async function broadcastState(){
-  if(!supaChannel||!player||gunStatus!=='online')return;
+  if(currentMode==='split')return; // fix #36: no broadcast in local split
+  if(!ablyChannel||!player||gunStatus!=='online')return;
   try{
-    await supaChannel.track({name:player.name,
-      cells:JSON.stringify(player.cells.map(c=>({x:c.x|0,y:c.y|0,r:Math.round(c.r*10)/10,ea:Math.round(c.eyeAngle*100)/100}))),
-      palIdx:currentPalIdx,skinIdx:currentSkinIdx,ts:Date.now()});
+    ablyChannel.presence.update({
+      name:player.name,
+      cells:player.cells.map(c=>({x:c.x|0,y:c.y|0,r:Math.round(c.r*10)/10,ea:Math.round(c.eyeAngle*100)/100})),
+      palIdx:currentPalIdx,skinIdx:currentSkinIdx
+    });
   }catch(e){}
 }
+
 function leaveMultiplayer(){
-  if(supaChannel){try{supaChannel.untrack();supaChannel.unsubscribe();}catch(e){}supaChannel=null;}
+  if(ablyChannel){try{ablyChannel.presence.leave();}catch(e){}ablyChannel=null;}
+  if(ablyClient){try{ablyClient.close();}catch(e){}ablyClient=null;}
   remotePlayers.clear();
 }
+
 function pruneRemote(){
   const now=Date.now();let changed=false;
   for(const[id,p] of remotePlayers){if(now-(p.ts||0)>STALE_MS){remotePlayers.delete(id);changed=true;}}
@@ -862,11 +1219,26 @@ function createRoom(){
   const code=Math.random().toString(36).slice(2,7).toUpperCase();
   document.getElementById('room-input').value=code;
   initMultiplayer(code);
-  document.getElementById('room-status').textContent=`✅ Room "${code}" created — share this URL!`;
+  // Set AFTER initMultiplayer (which calls updateRoomStatus) so our message wins
+  setTimeout(()=>{document.getElementById('room-status').textContent=`✅ Room "${code}" created — share the invite link!`;},50);
 }
 function updateRoomStatus(){
   const el=document.getElementById('room-status');
-  el.textContent=(currentRoom!=='global')?`✅ Room: ${currentRoom} — share the URL to play together!`:'';
+  const invBtn=document.getElementById('invite-link-btn');
+  if(currentRoom!=='global'){
+    el.textContent=`✅ Room: ${currentRoom} — share the URL to play together! (max ${CG.getLobbyMax()} players)`;
+    if(invBtn)invBtn.style.display='';
+  } else {
+    el.textContent='';
+    if(invBtn)invBtn.style.display='none';
+  }
+}
+async function copyInviteLink(){
+  // Use CrazyGames SDK invite link (falls back to URL copy)
+  const link = await CG.getInviteLink({ room: currentRoom });
+  const url = link || window.location.href;
+  try{await navigator.clipboard.writeText(url);}catch(e){}
+  document.getElementById('room-status').textContent='✅ Invite link copied!';
 }
 
 /* ══════════════════════════════════════════
@@ -882,7 +1254,7 @@ async function submitGLB(name,coins,kills){
 async function loadAndRenderGLB(hlName){
   if(!supa){renderGLB([],hlName||'');return;}
   try{
-    const{data}=await supa.from('dragonorb_hall').select('name,coins,kills').order('coins',{ascending:false}).limit(10);
+    const{data}=await supa.from('dragonorb_hall').select('name,coins,kills').order('kills',{ascending:false}).limit(10); // fix #41: sort by kills (skill), coins as display
     renderGLB(data||[],hlName||'');
   }catch(e){renderGLB([],hlName||'');}
 }
@@ -1060,6 +1432,23 @@ let lastTime=0,animId=null;
 let sessionKills=0,sessionTime=0,peakRank=999;
 let totalCoins=0,lastSkinIdx=-1,deathKiller='';
 let currentPalIdx=0,currentSkinIdx=0,hadRank1=false;
+/* ── MODE STATE ── */
+let currentMode='solo',challengeMode=false;
+let manualSkinIdx=-1; // -1=auto(best unlocked), >=0=player chose
+let lobbyOpen=false,lobbyPollIv=null,challengeCountingDown=false,isLobbyHost=false;
+let challengeWon=false;
+let p2pal=null; // P2 palette - set in initPlayer2, used in collision code
+let p2SkinChoice=1; // P2's chosen skin index (default Shadow Drake)
+// Ensure p2SkinChoice is unlocked; if not, fall back to 0 (always unlocked)
+(function(){const ul=typeof SD!=='undefined'?(SD.skins||[]):[];if(!ul.includes(p2SkinChoice)&&p2SkinChoice!==0)p2SkinChoice=0;})();
+/* ── PLAYER 2 (split screen) ── */
+let player2=null,fire2Charge=0,fire2Charging=false,fire2Cooldown=0;
+let p2Keys={up:false,down:false,left:false,right:false};
+let p1Keys={up:false,down:false,left:false,right:false}; // WASD for P1 in split mode
+const cam2={x:5000,y:5000,zoom:1};
+let zoom2T=1;
+const canvas2=document.getElementById('gc2');
+const ctx2=canvas2?canvas2.getContext('2d'):null;
 let food=[],foodSet=new Set();
 let player=null,firebolts=[],ejectedMass=[];
 const bots=[];
@@ -1120,6 +1509,25 @@ function ejectMass(){
   SFX.eject();
 }
 function updatePlayer(dt){
+  // In split mode, P1 aims/looks in WASD direction
+  if(currentMode==='split'&&player&&player.cells.length){
+    let dx1=0,dy1=0;
+    if(p1Keys.up)dy1-=1;if(p1Keys.down)dy1+=1;
+    if(p1Keys.left)dx1-=1;if(p1Keys.right)dx1+=1;
+    if(dx1||dy1){
+      const len=Math.sqrt(dx1*dx1+dy1*dy1)||1;dx1/=len;dy1/=len;
+      let cx1=0,cy1=0;
+      for(const c of player.cells){cx1+=c.x;cy1+=c.y;}
+      cx1/=player.cells.length;cy1/=player.cells.length;
+      mouse.wx=cx1+dx1*300;mouse.wy=cy1+dy1*300;
+    } else {
+      // No keys — aim at self to stop movement
+      let cx1=0,cy1=0;
+      for(const c of player.cells){cx1+=c.x;cy1+=c.y;}
+      cx1/=player.cells.length;cy1/=player.cells.length;
+      mouse.wx=cx1;mouse.wy=cy1;
+    }
+  }
   if(!player)return;
   player.splitCd=Math.max(0,player.splitCd-dt);
   for(const c of player.cells){
@@ -1200,8 +1608,18 @@ function releaseFire(){
   fireCharging=false;if(fireCharge<0.05){fireCharge=0;return;}
   const charge=fireCharge;fireCharge=0;fireCooldown=FIRE_COOLDOWN;SFX.fire();
   let mc2=player.cells[0];for(const c of player.cells)if(c.r>mc2.r)mc2=c;
-  const dx=mouse.wx-mc2.x,dy=mouse.wy-mc2.y,len=hypot(dx,dy)||1;
-  const nx=dx/len,ny=dy/len;
+  let nx,ny;
+  if(currentMode==='split'){
+    // In split mode, fire in the direction P1 is moving (WASD)
+    let fdx=0,fdy=0;
+    if(p1Keys.up)fdy-=1;if(p1Keys.down)fdy+=1;
+    if(p1Keys.left)fdx-=1;if(p1Keys.right)fdx+=1;
+    if(!fdx&&!fdy){nx=Math.cos(mc2.eyeAngle);ny=Math.sin(mc2.eyeAngle);}
+    else{const fl=hypot(fdx,fdy)||1;nx=fdx/fl;ny=fdy/fl;}
+  } else {
+    const dx=mouse.wx-mc2.x,dy=mouse.wy-mc2.y,len=hypot(dx,dy)||1;
+    nx=dx/len;ny=dy/len;
+  }
   const mouthX=mc2.x+Math.cos(mc2.eyeAngle)*mc2.r;
   const mouthY=mc2.y+Math.sin(mc2.eyeAngle)*mc2.r;
   const spd=FIRE_SPEED*(0.7+charge*0.6),radius=12+charge*20,range=FIRE_MAX_RANGE*(0.4+charge*0.6);
@@ -1588,6 +2006,15 @@ function drawPlayer(){
     drawOrb(sx,sy,sr,pal,c.eyeAngle,player.name,true,false,currentRank===1);
     if(c.mergeTimer>0&&sr>8){const al=Math.min(.5,c.mergeTimer/MERGE_TIME*.5);ctx.save();ctx.strokeStyle=`rgba(220,160,255,${al})`;ctx.lineWidth=1.5;ctx.setLineDash([5,5]);ctx.beginPath();ctx.arc(sx,sy,sr+5,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.restore();}
   }
+  // In split screen, draw P2 on P1's canvas so P1 can see P2
+  if(currentMode==='split'&&player2){
+    const pal2=p2pal||(SKINS[player2.palIdx]&&SKINS[player2.palIdx].pal)||PALETTES[3];
+    for(const c of player2.cells){
+      if(!inView(c.x,c.y,c.r))continue;
+      const sx=toSX(c.x),sy=toSY(c.y),sr=toSR(c.r);
+      drawOrb(sx,sy,sr,pal2,c.eyeAngle,player2.name,false,false,false);
+    }
+  }
 }
 function drawRemotePlayers(){
   for(const[,rp] of remotePlayers){
@@ -1602,6 +2029,8 @@ function drawMinimap(){
   mc.fillStyle='rgba(130,80,190,.3)';for(let i=0;i<food.length;i+=12)mc.fillRect(food[i].x*sc-.6,food[i].y*sc-.6,1.4,1.4);
   for(const b of bots){if(b.dead)continue;mc.fillStyle=b.palette.hi;mc.beginPath();mc.arc(b.x*sc,b.y*sc,Math.max(isMobile?2.5:1.5,b.r*sc*(isMobile?2.8:1.8)),0,Math.PI*2);mc.fill();}
   for(const[,rp] of remotePlayers){if(!rp.cells)continue;mc.fillStyle='#4ade80';mc.shadowColor='#4ade80';mc.shadowBlur=4;for(const rc of rp.cells){mc.beginPath();mc.arc(rc.x*sc,rc.y*sc,Math.max(2.5,rc.r*sc*2),0,Math.PI*2);mc.fill();}mc.shadowBlur=0;}
+  // P2 dot on minimap (orange)
+  if(currentMode==='split'&&player2){mc.fillStyle='#ff8c00';mc.shadowColor='#ff8c00';mc.shadowBlur=5;for(const c of player2.cells){mc.beginPath();mc.arc(c.x*sc,c.y*sc,Math.max(2.5,c.r*sc*2.2),0,Math.PI*2);mc.fill();}mc.shadowBlur=0;}
   if(player){mc.fillStyle='#c084fc';mc.shadowColor='#c084fc';mc.shadowBlur=5;for(const c of player.cells){mc.beginPath();mc.arc(c.x*sc,c.y*sc,Math.max(2.5,c.r*sc*2.2),0,Math.PI*2);mc.fill();}mc.shadowBlur=0;
     const vw=W/cam.zoom*sc,vh=H/cam.zoom*sc;mc.strokeStyle='rgba(180,120,255,.4)';mc.lineWidth=1;mc.strokeRect(cam.x*sc-vw/2,cam.y*sc-vh/2,vw,vh);}
   mc.strokeStyle='rgba(100,30,160,.65)';mc.lineWidth=1.5;mc.strokeRect(.75,.75,MS-1.5,MS-1.5);
@@ -1610,28 +2039,14 @@ function drawMinimap(){
 /* HUD */
 function renderStatsCard(){
   document.getElementById('s-games').textContent=SD.games||0;
-  document.getElementById('s-rank').textContent=SD.bestRank<999?`#${SD.bestRank}`:'—';
+  document.getElementById('s-rank').textContent=(SD.bestRank&&SD.bestRank<999)?`#${SD.bestRank}`:'—';
   document.getElementById('s-coins').textContent=(SD.coins||0)+'🪙';
   document.getElementById('s-kills').textContent=(SD.totalKills||0)+'🗡';
   const bt=SD.bestTime||0;document.getElementById('s-time').textContent=bt>0?`${Math.floor(bt/60)}m${Math.floor(bt%60)}s`:'—';
 }
-function renderSkinsCard(){
-  const el=document.getElementById('skin-list');if(!el)return;
-  el.innerHTML=SKINS.map((s,i)=>{const u=(SD.skins||[]).includes(i)||i===0;return `<div class="sk-item${u?' unlocked':''}"><div class="sk-dot"></div>${s.emoji} ${s.name}${u?'':' ('+s.at+'🪙)'}</div>`;}).join('');
-}
 function showPB(){document.getElementById('pb-badge').classList.add('show');pbTimer=3.2;}
 function checkPB(coins){if(coins>(SD.prevCoins||0)&&coins>=20){showPB();return true;}return false;}
-function checkMilestone(){
-  for(let i=SKINS.length-1;i>=0;i--){
-    if((SD.coins||0)>=SKINS[i].at&&lastSkinIdx<i){
-      lastSkinIdx=i;unlockSkin(i);currentSkinIdx=i;
-      const sk=SKINS[i],el=document.getElementById('skin-toast');
-      el.textContent=`${sk.emoji} Skin Unlocked: "${sk.name}"! Now equipped!`;
-      el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3800);SFX.milestone();break;
-    }
-  }
-}
-function unlockSkin(i){if(!(SD.skins||[]).includes(i)){(SD.skins=SD.skins||[]).push(i);writeSave(SD);}}
+function unlockSkin(i){if(!(SD.skins||[]).includes(i)){(SD.skins=SD.skins||[]).push(i);writeSave(SD);if(currentMode==='split')renderP2SkinPicker();}}
 let ktTimer=0;
 function showKillToast(name,coins,icon){
   document.getElementById('kt-t').textContent=`${icon||'🗡'} Devoured ${name}!`;
@@ -1641,12 +2056,13 @@ function showKillToast(name,coins,icon){
 function updateHUD(){
   if(!player&&!spectating)return;
   const entries=[];
-  for(const b of bots)if(!b.dead)entries.push({name:b.name,mass:rToMass(b.r),isMe:false,isReal:false});
-  for(const[,rp] of remotePlayers){if(!rp.cells)continue;let m=0;for(const c of rp.cells)m+=rToMass(c.r);entries.push({name:rp.name,mass:m,isMe:false,isReal:true});}
-  if(player){let total=0;for(const c of player.cells)total+=rToMass(c.r);entries.push({name:player.name,mass:total,isMe:true,isReal:false});}
+  for(const b of bots)if(!b.dead)entries.push({name:b.name,mass:rToMass(b.r),isMe:false,isReal:false,isP2:false});
+  for(const[,rp] of remotePlayers){if(!rp.cells)continue;let m=0;for(const c of rp.cells)m+=rToMass(c.r);entries.push({name:rp.name,mass:m,isMe:false,isReal:true,isP2:false});}
+  if(player){let total=0;for(const c of player.cells)total+=rToMass(c.r);entries.push({name:player.name,mass:total,isMe:true,isReal:false,isP2:false});}
+  if(currentMode==='split'&&player2){let total2=0;for(const c of player2.cells)total2+=rToMass(c.r);entries.push({name:player2.name,mass:total2,isMe:false,isReal:false,isP2:true});}
   entries.sort((a,b2)=>b2.mass-a.mass);
   let html='';
-  for(let i=0;i<Math.min(10,entries.length);i++){const e=entries[i],me=e.isMe;const realTag=e.isReal?'<span class="lrreal">●</span>':'';html+=`<div class="lr${me?' lm':''}"><span class="lrk">${i+1}.</span><span class="lrn">${e.name}${realTag}</span><span class="lrs">${Math.floor(e.mass)}</span></div>`;}
+  for(let i=0;i<Math.min(10,entries.length);i++){const e=entries[i],me=e.isMe;const realTag=e.isReal?'<span class="lrreal">●</span>':'';const p2Tag=e.isP2?'<span class="lrreal" style="color:#ffb060">P2</span>':'';html+=`<div class="lr${me?' lm':''}"><span class="lrk">${i+1}.</span><span class="lrn">${e.name}${realTag}${p2Tag}</span><span class="lrs">${Math.floor(e.mass)}</span></div>`;}
   document.getElementById('lb-list').innerHTML=html;
   if(!player)return;
   currentRank=entries.findIndex(e=>e.isMe)+1;
@@ -1752,22 +2168,27 @@ function startGame(){
   document.getElementById('overlay').classList.remove('has-snapshot');
   parts.length=0;firebolts.length=0;ejectedMass.length=0;
   totalCoins=0;sessionKills=0;sessionTime=0;peakRank=999;hadRank1=false;currentRank=999;
-  peakSnapshot=null;peakSnapshotRank=999;lastSkinIdx=-1;deathKiller='';shakeAmt=shakeX=shakeY=0;
+  peakSnapshot=null;peakSnapshotRank=999;lastSkinIdx=getBestUnlockedSkin();deathKiller='';shakeAmt=shakeX=shakeY=0;
   fireCharge=0;fireCharging=false;fireCooldown=0;eatSoundCd=0;
   killStreak=0;maxKillStreak=0;sessionFireKills=0;streakResetTimer=0;slowMoTimer=0;clearSlowMo();
   if((SD.games||0)<3){fireTutorialShown=true;fireTutorialTimer=22;document.getElementById('fire-tutorial').classList.add('show');}
-  const totalC=SD.coins||0;for(let i=SKINS.length-1;i>=0;i--){if(totalC>=SKINS[i].at){lastSkinIdx=i;break;}}
   initFood();initBots();initAmbient();initPlayer(name);
   if(player&&player.cells.length)seedNearbyNoobs(player.cells[0].x,player.cells[0].y);
   running=true;spectating=false;lastTime=performance.now();
+  CG.gameplayStart();
   if(animId)cancelAnimationFrame(animId);
   try{const u=new URL(window.location.href);const rc=u.searchParams.get('room');if(rc)document.getElementById('room-input').value=rc;}catch{}
   const roomCode=document.getElementById('room-input').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'')||'global';
-  initMultiplayer(roomCode);
+  // Don't reinit multiplayer if already connected in challenge lobby (fix #14)
+  if(!(challengeMode&&gunStatus==='online'&&currentRoom===roomCode&&ablyChannel)){
+    initMultiplayer(roomCode);
+  }
   animId=requestAnimationFrame(loop);
 }
 function endGame(killerName){
   running=false;deathKiller=killerName||'the realm';spectating=true;spectateTimer=3.5;SFX.die();
+  CG.gameplayStop();
+  CG.requestAd('midgame');
   SD.games=(SD.games||0)+1;if(peakRank<(SD.bestRank||999))SD.bestRank=peakRank;
   if(sessionTime>(SD.bestTime||0))SD.bestTime=sessionTime;
   SD.totalKills=(SD.totalKills||0)+sessionKills;SD.prevCoins=SD.prevCoins||0;
@@ -1779,6 +2200,7 @@ function endGame(killerName){
 }
 function showDeathOverlay(){
   if(animId){cancelAnimationFrame(animId);animId=null;}
+  CG.gameplayStop(); // back to menu — no active gameplay
   document.getElementById('spec-banner').classList.remove('show');
   const ov=document.getElementById('overlay');
   ov.querySelector('.ot').textContent='💀 Devoured';
@@ -1805,28 +2227,54 @@ function showDeathOverlay(){
   const thumbEl=document.getElementById('peak-thumb'),imgEl=document.getElementById('peak-img');
   if(peakSnapshot){imgEl.src=peakSnapshot;thumbEl.classList.add('show');document.getElementById('peak-thumb-label').textContent=`Your Peak — Rank #${peakSnapshotRank}`;ov.style.setProperty('--peak-snap',`url(${peakSnapshot})`);ov.classList.add('has-snapshot');}
   else{thumbEl.classList.remove('show');ov.classList.remove('has-snapshot');}
-  renderStatsCard();renderSkinsCard();ov.style.display='flex';
+  renderStatsCard();renderSkinsCard();if(currentMode==='split')renderP2SkinPicker();ov.style.display='flex';
 }
 
 /* ══════════════════════════════════════════
    INPUT — DESKTOP
 ══════════════════════════════════════════ */
 function initInput(){
+  // Prevent page scroll when embedded in an iframe (CrazyGames requirement)
+  window.addEventListener('wheel', e => e.preventDefault(), { passive: false });
+  window.addEventListener('keydown', e => {
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key)) {
+      e.preventDefault();
+    }
+  }, { capture: true });
+
   canvas.addEventListener('mousemove',e=>{
     if(!running)return;
+    // In split mode, P1 is controlled by WASD keyboard — mouse should not interfere
+    if(currentMode==='split')return;
     mouse.wx=(e.clientX-W*.5-shakeX)/cam.zoom+cam.x;
     mouse.wy=(e.clientY-H*.5-shakeY)/cam.zoom+cam.y;
   });
-  window.addEventListener('keydown',e=>{
+  // Store as replaceable handlers so the patch section can override them without double-firing
+  window._p1KeydownHandler=e=>{
+    if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();
     if(!running)return;
-    if(e.key==='w'||e.key==='W')splitPlayer();
-    if(e.key==='e'||e.key==='E')ejectMass();
+    if(currentMode==='split'){
+      if(e.key==='t'||e.key==='T')splitPlayer();
+    } else {
+      if(e.key==='w'||e.key==='W')splitPlayer();
+      if(e.key==='e'||e.key==='E')ejectMass();
+    }
     if(e.code==='Space'){e.preventDefault();startChargeFire();}
-  });
-  window.addEventListener('keyup',e=>{if(e.code==='Space'){e.preventDefault();releaseFire();}});
+  };
+  window._p1KeyupHandler=e=>{
+  if(e.code==='Space'){e.preventDefault();releaseFire();}
+  if(currentMode==='split'){
+    if(e.key==='w'||e.key==='W')p1Keys.up=false;
+    if(e.key==='s'||e.key==='S')p1Keys.down=false;
+    if(e.key==='a'||e.key==='A')p1Keys.left=false;
+    if(e.key==='d'||e.key==='D')p1Keys.right=false;
+  }
+};
+  window.addEventListener('keydown',window._p1KeydownHandler);
+  window.addEventListener('keyup',window._p1KeyupHandler);
   canvas.addEventListener('contextmenu',e=>e.preventDefault());
-  canvas.addEventListener('mousedown',e=>{if(e.button===2&&running)startChargeFire();});
-  canvas.addEventListener('mouseup',e=>{if(e.button===2&&running)releaseFire();});
+  canvas.addEventListener('mousedown',e=>{if(e.button===2&&running&&currentMode!=='split')startChargeFire();});
+  canvas.addEventListener('mouseup',e=>{if(e.button===2&&running&&currentMode!=='split')releaseFire();});
 }
 
 /* ══════════════════════════════════════════
@@ -2032,17 +2480,1040 @@ function initMobile(){
 try{const u=new URL(window.location.href);const rc=u.searchParams.get('room');if(rc)document.getElementById('room-input').value=rc.toUpperCase();}catch{}
 document.getElementById('name-input').addEventListener('keydown',e=>{if(e.key==='Enter')startGame();});
 initInput();initMobile();
-try{const n=localStorage.getItem('dragonorb_name');if(n)document.getElementById('name-input').value=n;}catch{}
+
+// Pre-fill name so the Play button is always 1-click ready (CrazyGames max 1-click rule).
+// Priority: saved name → CrazyGames username → random guest name.
+(function prefillName(){
+  const nameEl=document.getElementById('name-input');
+  // 1. Try saved local name first
+  let savedName='';
+  try{savedName=localStorage.getItem('dragonorb_name')||'';}catch{}
+  if(savedName){nameEl.value=savedName;return;}
+  // 2. Try CrazyGames SDK username (async, best-effort)
+  const ADJECTIVES=['Swift','Dark','Fire','Storm','Void','Iron','Gold','Frost','Ash','Jade'];
+  const NOUNS=['Drake','Wyrm','Fang','Scale','Wing','Claw','Orb','Flame','Shadow','Ghost'];
+  const guestName=ADJECTIVES[Math.floor(Math.random()*ADJECTIVES.length)]+NOUNS[Math.floor(Math.random()*NOUNS.length)];
+  nameEl.value=guestName; // set immediately so button always works
+  setTimeout(async()=>{
+    try{
+      if(window.CrazyGames&&window.CrazyGames.SDK&&window.CrazyGames.SDK.user){
+        const u=await window.CrazyGames.SDK.user.getUser();
+        if(u&&u.username&&nameEl.value===guestName)nameEl.value=u.username.slice(0,16);
+      }
+    }catch(e){}
+  },600);
+})();
+
 renderStatsCard();renderSkinsCard();
+
+/* ══════════════════════════════════════════
+   SKIN EQUIP SYSTEM (fix #10,11,12,13,25)
+══════════════════════════════════════════ */
+// manualSkinIdx declared in main vars block above
+
+function equipSkin(i){
+  manualSkinIdx = i;
+  currentSkinIdx = i;
+  renderSkinsCard();
+}
+
+function renderSkinsCard(){
+  const el=document.getElementById('skin-list');if(!el)return;
+  const equipped = manualSkinIdx >= 0 ? manualSkinIdx : getBestUnlockedSkin();
+  el.innerHTML=SKINS.map((s,i)=>{
+    const u=(SD.skins||[]).includes(i)||i===0;
+    const eq = u && i===equipped;
+    return `<div class="sk-item${u?' unlocked':''}${eq?' equipped':''}" ${u?`onclick="equipSkin(${i})"`:''}>`+
+      `<div class="sk-dot"></div>${s.emoji} ${s.name}${u?(eq?' ✓':''):' ('+s.at+'🪙)'}</div>`;
+  }).join('');
+}
+
+// Override checkMilestone so it respects manual skin choice (fix #13)
+function checkMilestone(){
+  for(let i=SKINS.length-1;i>=0;i--){
+    if((SD.coins||0)>=SKINS[i].at&&lastSkinIdx<i){
+      lastSkinIdx=i;unlockSkin(i);
+      // Only auto-equip if player hasn't manually chosen a skin
+      if(manualSkinIdx<0) currentSkinIdx=i;
+      const sk=SKINS[i],el=document.getElementById('skin-toast');
+      el.textContent=`${sk.emoji} Skin Unlocked: "${sk.name}"!${manualSkinIdx<0?' Now equipped!':''}`;
+      el.classList.add('show');setTimeout(()=>el.classList.remove('show'),3800);SFX.milestone();
+      renderSkinsCard();break;
+    }
+  }
+}
+
+/* ══════════════════════════════════════════
+   MODE TABS — solo / split / challenge
+   (fix #7,8,16,17,22,23,31,32,34,37)
+══════════════════════════════════════════ */
+function renderP2SkinPicker(){
+  const container=document.getElementById('p2-skin-picker');
+  if(!container)return;
+  const unlocked=SD.skins||[];
+  container.innerHTML=SKINS.map((sk,i)=>{
+    const isUnlocked=unlocked.includes(i)||i===0;
+    if(!isUnlocked)return''; // only show unlocked skins
+    const active=i===p2SkinChoice?'p2-skin-active':'';
+    return`<button class="p2-skin-btn ${active}" data-skin="${i}" onclick="selectP2Skin(${i})" title="${sk.name}">${sk.emoji}</button>`;
+  }).join('');
+  // If no unlocked skins beyond 0, ensure Ember Drake shows
+  if(!container.innerHTML){
+    container.innerHTML=`<button class="p2-skin-btn p2-skin-active" data-skin="0" onclick="selectP2Skin(0)" title="Ember Drake">🔴</button>`;
+  }
+}
+function selectP2Skin(i){
+  p2SkinChoice=i;
+  // Update picker UI using data-skin attribute
+  document.querySelectorAll('.p2-skin-btn').forEach(btn=>{
+    btn.classList.toggle('p2-skin-active',parseInt(btn.dataset.skin)===i);
+  });
+}
+function setMode(m){
+  // Tablet check: block split on narrow screens (fix #23)
+  // Split screen now works on ALL screen sizes (mobile, tablet, desktop)
+  currentMode=m;
+  challengeMode=(m==='challenge');
+  ['solo','split','challenge'].forEach(id=>{
+    document.getElementById('tab-'+id).classList.toggle('active',id===m);
+  });
+  const p2row=document.getElementById('p2-name-row');
+  const roomBar=document.getElementById('room-bar');
+  p2row.style.display = m==='split' ? 'flex' : 'none';
+  if(m==='split') renderP2SkinPicker();
+  // Show room bar for solo (optional) and challenge (required); hide for split
+  if(roomBar) roomBar.style.display = m==='split' ? 'none' : '';
+
+  // Challenge: auto-create a room and enter lobby (fix #31)
+  if(m==='challenge'){
+    if(currentRoom==='global'){
+      const code=Math.random().toString(36).slice(2,7).toUpperCase();
+      document.getElementById('room-input').value=code;
+      initMultiplayer(code);
+    }
+    openChallengeLobby();
+  } else {
+    closeChallengeLobby();
+  }
+
+  // Update controls hint (fix #7)
+  const hint=document.getElementById('controls-hint');
+  if(hint){
+    if(m==='split'){
+      hint.innerHTML='<b style="color:#c084fc">P1:</b> WASD=move · <b>SPACE</b>=fire · <b>T</b>=split &nbsp;|&nbsp; <b style="color:#4ade80">P2:</b> ↑↓←→=move · <b>Enter</b>=split · <b>Shift</b>=fire';
+    } else if(m==='challenge'){
+      hint.innerHTML='First to reach <b style="color:var(--gold)">#1</b> wins! Invite friends then host clicks START.';
+    } else {
+      hint.innerHTML='<span class="fire-hint">Hold SPACE</span> to breathe fire &nbsp;·&nbsp; <span>W</span> to split &nbsp;·&nbsp; Devour everything';
+    }
+  }
+}
+
+/* ══════════════════════════════════════════
+   CHALLENGE LOBBY SYSTEM
+   (fix #7,8,31,32,33,34,35,36,43)
+══════════════════════════════════════════ */
+// lobbyOpen, lobbyPollIv, challengeCountingDown, isLobbyHost declared in main vars block
+
+function openChallengeLobby(){
+  lobbyOpen=true;
+  isLobbyHost=true; // whoever opens the lobby is host
+  document.getElementById('ch-lobby').classList.add('show');
+  document.getElementById('ch-lobby-code').textContent=currentRoom||'------';
+  document.getElementById('ch-min-warn').style.display='none';
+  updateLobbyPlayerList();
+  // Poll lobby state every 1.5s
+  if(lobbyPollIv)clearInterval(lobbyPollIv);
+  lobbyPollIv=setInterval(updateLobbyPlayerList,1500);
+}
+
+function closeChallengeLobby(){
+  lobbyOpen=false;
+  document.getElementById('ch-lobby').classList.remove('show');
+  document.getElementById('ch-lobby-countdown').style.display='none';
+  challengeCountingDown=false;
+  if(lobbyPollIv){clearInterval(lobbyPollIv);lobbyPollIv=null;}
+}
+
+function updateLobbyPlayerList(){
+  const listEl=document.getElementById('ch-player-list');
+  if(!listEl)return;
+  const myName=(document.getElementById('name-input').value.trim()||'You');
+  const players=[{name:myName+'(You)',isMe:true}];
+  for(const[,rp] of remotePlayers) players.push({name:rp.name,isMe:false});
+
+  listEl.innerHTML=players.map(p=>
+    `<div class="ch-lobby-player"><div style="display:flex;align-items:center">
+      <div class="ready-dot go"></div>${esc(p.name)}</div>
+      <span style="font-size:10px;color:#4ade80">● In Lobby</span></div>`
+  ).join('');
+
+  // Update code display in case room changed
+  document.getElementById('ch-lobby-code').textContent=currentRoom||'------';
+
+  // Start button: always enabled for host (fix #8 — host decides when to start)
+  const btn=document.getElementById('ch-start-btn');
+  const warn=document.getElementById('ch-min-warn');
+  if(btn){
+    if(isLobbyHost){
+      btn.style.display='';
+      btn.disabled=false;
+      // Show warning if alone but don't block
+      if(players.length<2){
+        warn.style.display='block';
+        warn.textContent='⚠ You\'re alone — start anyway or wait for friends';
+      } else {
+        warn.style.display='none';
+      }
+    } else {
+      btn.style.display='none';
+      warn.style.display='block';
+      warn.textContent='⏳ Waiting for host to start…';
+    }
+  }
+}
+
+function _copyText(text,successEl,successMsg,resetMsg,resetDelay){
+  if(navigator.clipboard&&window.isSecureContext){
+    navigator.clipboard.writeText(text).then(()=>{
+      if(successEl)successEl.textContent=successMsg;
+      if(resetMsg)setTimeout(()=>{if(successEl)successEl.textContent=resetMsg;},resetDelay||2500);
+    }).catch(()=>_fallbackCopy(text,successEl,successMsg,resetMsg,resetDelay));
+  } else {
+    _fallbackCopy(text,successEl,successMsg,resetMsg,resetDelay);
+  }
+}
+function _fallbackCopy(text,successEl,successMsg,resetMsg,resetDelay){
+  try{
+    const ta=document.createElement('textarea');ta.value=text;
+    ta.style.cssText='position:fixed;top:0;left:0;opacity:0;pointer-events:none';
+    document.body.appendChild(ta);ta.focus();ta.select();
+    document.execCommand('copy');document.body.removeChild(ta);
+    if(successEl)successEl.textContent=successMsg;
+    if(resetMsg)setTimeout(()=>{if(successEl)successEl.textContent=resetMsg;},resetDelay||2500);
+  }catch(e){if(successEl)successEl.textContent='⚠ Copy failed — select manually';}
+}
+function copyLobbyCode(){
+  const code=currentRoom||'';
+  if(!code)return;
+  const url=new URL(window.location.origin+window.location.pathname);
+  url.searchParams.set('room',code);
+  url.searchParams.set('challenge','1');
+  const tipEl=document.getElementById('ch-invite-tip');
+  _copyText(url.toString(),tipEl,'✅ Invite link copied!','🔗 Click code to copy invite link',2500);
+}
+
+function startChallengeMatch(){
+  if(challengeCountingDown)return;
+  challengeCountingDown=true;
+  // Broadcast start signal to all room members
+  try{
+    if(ablyChannel&&gunStatus==='online'){
+      ablyChannel.publish('challenge_start',{room:currentRoom,by:MY_ID});
+    }
+  }catch(e){}
+  runLobbyCountdown();
+}
+
+function runLobbyCountdown(){
+  const el=document.getElementById('ch-lobby-countdown');
+  const btn=document.getElementById('ch-start-btn');
+  if(btn)btn.disabled=true;
+  el.style.display='block';
+  let n=3;
+  el.textContent=n;
+  const iv=setInterval(()=>{
+    n--;
+    if(n>0){el.textContent=n;SFX.split();}
+    else{
+      clearInterval(iv);
+      el.textContent='GO!';
+      setTimeout(()=>{
+        closeChallengeLobby();
+        // Actually start the game (fix #7 — game only starts after lobby)
+        _origStartGameBase();
+        document.getElementById('challenge-banner').classList.add('show');
+        document.body.classList.add('challenge-active');
+      },600);
+    }
+  },1000);
+  SFX.split();
+}
+
+// Listen for host's start signal (non-host players)
+function listenChallengeStart(){
+  if(!ablyChannel)return;
+  ablyChannel.subscribe('challenge_start',msg=>{
+    if(!lobbyOpen||challengeCountingDown)return;
+    if(msg.data&&msg.data.room===currentRoom&&msg.data.by!==MY_ID){
+      // We're not the host — follow along
+      isLobbyHost=false;
+      challengeCountingDown=true;
+      runLobbyCountdown();
+    }
+  });
+}
+
+/* ══════════════════════════════════════════
+   SPLIT SCREEN — helpers
+   (fix #1,2,3,4,5,6,9,14,15,16,27,28,29,30,39)
+══════════════════════════════════════════ */
+const toSX2=wx=>(wx-cam2.x)*cam2.zoom+(canvas2?canvas2.width*.5:0);
+const toSY2=wy=>(wy-cam2.y)*cam2.zoom+(canvas2?canvas2.height*.5:0);
+const toSR2=r=>r*cam2.zoom;
+
+function initPlayer2(name){
+  // Spawn P2 near P1 so they share the same arena view (core split screen fix)
+  let x,y;
+  if(player&&player.cells.length){
+    // Place P2 ~180 units to the right of P1's spawn
+    const p1c=player.cells[0];
+    x=clamp(p1c.x+180,300,MAP_SIZE-300);
+    y=clamp(p1c.y,300,MAP_SIZE-300);
+  } else {
+    x=MAP_SIZE/2+90; y=MAP_SIZE/2;
+  }
+  player2={name,cells:[mkCell(x,y,PLAYER_R)],splitCd:0};
+  cam2.x=x; cam2.y=y; cam2.zoom=1;
+  const p2SkinIdx=(typeof p2SkinChoice!=='undefined'&&p2SkinChoice>=0)?p2SkinChoice:1;
+  p2pal=(SKINS[p2SkinIdx]&&SKINS[p2SkinIdx].pal)?SKINS[p2SkinIdx].pal:PALETTES[1];
+  player2.palIdx=p2SkinIdx;
+}
+
+function updatePlayer2(dt){
+  if(!player2)return;
+  player2.splitCd=Math.max(0,player2.splitCd-dt);
+  let dx2=0,dy2=0;
+  if(p2Keys.up)dy2-=1;
+  if(p2Keys.down)dy2+=1;
+  if(p2Keys.left)dx2-=1;
+  if(p2Keys.right)dx2+=1;
+
+  for(const c of player2.cells){
+    if(dx2||dy2){
+      const len=hypot(dx2,dy2)||1;const ndx=dx2/len,ndy=dy2/len;
+      const p2mx=c.x+ndx*240,p2my=c.y+ndy*240;
+      const ddx=p2mx-c.x,ddy=p2my-c.y,d=hypot(ddx,ddy);
+      if(Math.abs(c.vx)>.5||Math.abs(c.vy)>.5){c.vx*=.9;c.vy*=.9;c.x+=c.vx*dt;c.y+=c.vy*dt;}
+      else{c.vx=0;c.vy=0;if(d>1.5){const s=calcSpd(c.r),st=Math.min(s*dt,d);c.x+=ddx/d*st;c.y+=ddy/d*st;}}
+      if(d>1)c.eyeAngle=Math.atan2(ndy,ndx);
+    } else {
+      // No key held — decelerate to stop
+      c.vx*=.85;c.vy*=.85;c.x+=c.vx*dt;c.y+=c.vy*dt;
+    }
+    c.x=clamp(c.x,c.r,MAP_SIZE-c.r);c.y=clamp(c.y,c.r,MAP_SIZE-c.r);
+    c.mergeTimer=Math.max(0,c.mergeTimer-dt);
+    if(c.r>DECAY_THRESHOLD){const ex=c.r-DECAY_THRESHOLD;c.r=Math.max(DECAY_THRESHOLD,c.r-ex*DECAY_RATE*dt);}
+  }
+  if(player2.cells.length>1){
+    for(let i=player2.cells.length-1;i>0;i--){
+      for(let j=i-1;j>=0;j--){
+        const a=player2.cells[i],b2c=player2.cells[j];
+        if(a.mergeTimer>0||b2c.mergeTimer>0)continue;
+        if(dist(a.x,a.y,b2c.x,b2c.y)<(a.r+b2c.r)*.65){
+          b2c.r=massToR(rToMass(a.r)+rToMass(b2c.r));player2.cells.splice(i,1);break;
+        }
+      }
+    }
+  }
+  sepCells(player2.cells);
+  if(fire2Charging&&fire2Cooldown<=0)fire2Charge=Math.min(1,fire2Charge+dt/FIRE_CHARGE_TIME);
+  fire2Cooldown=Math.max(0,fire2Cooldown-dt);
+
+  // P2 eats using spatial grid (fix #28 — no raw food loop)
+  for(const c of player2.cells){
+    const near=grid.query(c.x,c.y,c.r+90);
+    for(const e of near){
+      if(e._isFood){
+        if(foodSet.has(e)&&dist(c.x,c.y,e.x,e.y)<c.r-e.r*.3){
+          removeFood(e);c.r=massToR(rToMass(c.r)+rToMass(e.r)*1.15);
+          totalCoins++;SD.coins=(SD.coins||0)+1;checkMilestone();
+        }
+      } else if(e._isBot&&!e.dead){
+        if(dist(c.x,c.y,e.x,e.y)<c.r&&c.r>e.r*EAT_RATIO){
+          const earned=Math.max(2,Math.floor(rToMass(e.r)*.10));
+          totalCoins+=earned;SD.coins=(SD.coins||0)+earned;
+          if(e.r>22){showKillToast(e.name,earned,'🗡');SFX.kill();}
+          eatBurst(e.x,e.y,e.palette,e.r);
+          c.r=massToR(rToMass(c.r)+rToMass(e.r)*.8);respawnBot(e);
+        }
+      }
+    }
+  }
+
+  // P1 ↔ P2 collision (fix #15)
+  if(player&&player.cells.length){
+    outer2:for(let ci2=player2.cells.length-1;ci2>=0;ci2--){
+      const c2=player2.cells[ci2];
+      for(let ci=player.cells.length-1;ci>=0;ci--){
+        const c1=player.cells[ci];
+        const d=dist(c1.x,c1.y,c2.x,c2.y);
+        if(d<c1.r&&c1.r>c2.r*EAT_RATIO){
+          c1.r=massToR(rToMass(c1.r)+rToMass(c2.r)*.6);
+          eatBurst(c2.x,c2.y,p2pal||PALETTES[1],c2.r);
+          player2.cells.splice(ci2,1);
+          if(!player2.cells.length){respawnP2();}
+          continue outer2;
+        } else if(d<c2.r&&c2.r>c1.r*EAT_RATIO){
+          c2.r=massToR(rToMass(c2.r)+rToMass(c1.r)*.6);
+          eatBurst(c1.x,c1.y,getPlayerPalette(),c1.r);
+          player.cells.splice(ci,1);
+          if(!player.cells.length){endGame('Player 2');return;}
+          break;
+        }
+      }
+    }
+  }
+}
+
+function respawnP2(){
+  // Respawn P2 near P1 so they stay in the same area
+  let x,y;
+  if(player&&player.cells.length){
+    const p1c=player.cells[0];
+    // Offset in a random direction ~300 units from P1
+    const angle=Math.random()*Math.PI*2;
+    x=clamp(p1c.x+Math.cos(angle)*300,300,MAP_SIZE-300);
+    y=clamp(p1c.y+Math.sin(angle)*300,300,MAP_SIZE-300);
+  } else {
+    x=rng(300,MAP_SIZE-300);y=rng(300,MAP_SIZE-300);
+  }
+  player2.cells=[mkCell(x,y,PLAYER_R)];
+  cam2.x=x;cam2.y=y;
+}
+
+function splitPlayer2(){
+  if(!player2||player2.splitCd>0)return;
+  const toAdd=[];
+  let dx2=0,dy2=0;
+  if(p2Keys.up)dy2-=1;if(p2Keys.down)dy2+=1;
+  if(p2Keys.left)dx2-=1;if(p2Keys.right)dx2+=1;
+  if(!dx2&&!dy2)dx2=1;
+  const len=hypot(dx2,dy2)||1;dx2/=len;dy2/=len;
+  for(const c of player2.cells){
+    if(c.r<17)continue;if(player2.cells.length+toAdd.length>=MAX_CELLS)break;
+    const nr=c.r/Math.SQRT2;c.r=nr;c.mergeTimer=MERGE_TIME;
+    const b2s=calcSpd(nr)*SPLIT_BURST;
+    const nc=mkCell(c.x+dx2*(nr+2),c.y+dy2*(nr+2),nr,dx2*b2s,dy2*b2s);
+    nc.mergeTimer=MERGE_TIME;toAdd.push(nc);
+  }
+  if(toAdd.length){player2.cells.push(...toAdd);player2.splitCd=.45;SFX.split();}
+}
+
+function releaseFire2(){
+  if(!fire2Charging||!player2||!player2.cells.length){fire2Charging=false;fire2Charge=0;return;}
+  fire2Charging=false;if(fire2Charge<0.05){fire2Charge=0;return;}
+  const charge=fire2Charge;fire2Charge=0;fire2Cooldown=FIRE_COOLDOWN;SFX.fire();
+  let mc3=player2.cells[0];for(const c of player2.cells)if(c.r>mc3.r)mc3=c;
+  const nx=Math.cos(mc3.eyeAngle),ny=Math.sin(mc3.eyeAngle);
+  const mouthX=mc3.x+nx*mc3.r,mouthY=mc3.y+ny*mc3.r;
+  const spd=FIRE_SPEED*(0.7+charge*0.6),radius=12+charge*20,range=FIRE_MAX_RANGE*(0.4+charge*0.6);
+  firebolts.push({x:mouthX,y:mouthY,vx:nx*spd,vy:ny*spd,r:radius,charge,distTraveled:0,maxDist:range,trailTimer:0});
+  trigShake(8*charge);
+}
+
+function updateCam2(dt){
+  if(!player2||!player2.cells.length)return;
+  let tx=0,ty=0,maxR=0;
+  for(const c of player2.cells){tx+=c.x;ty+=c.y;maxR=Math.max(maxR,c.r);}
+  tx/=player2.cells.length;ty/=player2.cells.length;
+  cam2.x=lerp(cam2.x,tx,5.5*dt);cam2.y=lerp(cam2.y,ty,5.5*dt);
+  let spread=maxR;for(const c of player2.cells)spread=Math.max(spread,dist(tx,ty,c.x,c.y)+c.r);
+  zoom2T=clamp((canvas2?canvas2.width*.34:160)/Math.max(spread,60),.2,1.3);
+  cam2.zoom=lerp(cam2.zoom,zoom2T,3.5*dt);
+}
+
+function renderP2HUD(){
+  if(!player2)return;
+  // Update P2 fire bar
+  const fb2=document.getElementById('fire-btn-fill2');
+  if(fb2){
+    if(fire2Cooldown>0){fb2.style.width='0%';fb2.style.background='rgba(255,80,0,.3)';}
+    else{fb2.style.width=(fire2Charge*100)+'%';fb2.style.background='linear-gradient(90deg,#ff6a00,#ee0979)';}
+  }
+  let m2=0;for(const c of player2.cells)m2+=rToMass(c.r);
+  document.getElementById('p2-sm').textContent=Math.floor(m2);
+  let rank2=1;
+  for(const b of bots){if(!b.dead&&rToMass(b.r)>m2)rank2++;}
+  if(player){let pm=0;for(const c of player.cells)pm+=rToMass(c.r);if(pm>m2)rank2++;}
+  document.getElementById('p2-sr').textContent='#'+rank2;
+  document.getElementById('p2-stats').style.display='block';
+}
+
+function drawOrb2(c2,sx,sy,sr,pal,eyeA,label){
+  if(sr<1)return;c2.save();
+  // Aura glow
+  const aura=c2.createRadialGradient(sx,sy,sr*.5,sx,sy,sr*1.6);
+  aura.addColorStop(0,pal.glow);aura.addColorStop(1,'transparent');
+  c2.fillStyle=aura;c2.beginPath();c2.arc(sx,sy,sr*1.6,0,Math.PI*2);c2.fill();
+  // Body gradient
+  const bg=c2.createRadialGradient(sx-sr*.3,sy-sr*.3,sr*.08,sx,sy,sr);
+  bg.addColorStop(0,lerpColor(pal.hi,'#ffffff',.25));bg.addColorStop(.55,pal.hi);bg.addColorStop(1,pal.body);
+  c2.shadowColor=pal.glow;c2.shadowBlur=sr*.9;c2.fillStyle=bg;
+  c2.beginPath();c2.arc(sx,sy,sr,0,Math.PI*2);c2.fill();c2.shadowBlur=0;
+  // Scale texture
+  if(sr>16){
+    c2.save();c2.beginPath();c2.arc(sx,sy,sr,0,Math.PI*2);c2.clip();
+    c2.strokeStyle='rgba(0,0,0,.2)';c2.lineWidth=Math.max(.5,sr*.035);
+    const rows=Math.ceil(sr/9);
+    for(let row=-rows;row<=rows;row++){const ry=sy+row*sr*.21,cols=Math.ceil(sr*1.6/(sr*.22)),sh=(row&1)*sr*.13;
+      for(let col=-cols;col<=cols;col++){const rx=sx+col*sr*.22+sh;c2.beginPath();c2.ellipse(rx,ry,sr*.09,sr*.065,0,0,Math.PI*2);c2.stroke();}}
+    c2.restore();
+  }
+  // Rim highlight
+  c2.strokeStyle='rgba(255,255,255,.11)';c2.lineWidth=sr*.06;c2.beginPath();c2.arc(sx,sy,sr*.94,0,Math.PI*2);c2.stroke();
+  // Eyes
+  const es=sr*.3,eL=eyeA-.42,eR2=eyeA+.42,eyeR=sr*.21,pupR=eyeR*.58;
+  for(const ea of[eL,eR2]){
+    const ex=sx+Math.cos(ea)*es,ey=sy+Math.sin(ea)*es;
+    const px=ex+Math.cos(eyeA)*eyeR*.22,py=ey+Math.sin(eyeA)*eyeR*.22;
+    c2.fillStyle='#f0f0f0';c2.beginPath();c2.arc(ex,ey,eyeR,0,Math.PI*2);c2.fill();
+    c2.fillStyle=pal.eye||'#ff7090';c2.shadowColor=pal.eye||'#ff7090';c2.shadowBlur=eyeR*2;
+    c2.beginPath();c2.arc(px,py,pupR,0,Math.PI*2);c2.fill();c2.shadowBlur=0;
+    c2.save();c2.translate(px,py);c2.scale(.32,1);c2.fillStyle='rgba(0,0,0,.85)';
+    c2.beginPath();c2.arc(0,0,pupR*.72,0,Math.PI*2);c2.fill();c2.restore();
+    c2.fillStyle='rgba(255,255,255,.65)';c2.beginPath();c2.arc(ex-eyeR*.22,ey-eyeR*.22,eyeR*.28,0,Math.PI*2);c2.fill();
+  }
+  // Specular shine
+  c2.fillStyle='rgba(255,255,255,.13)';c2.beginPath();c2.arc(sx-sr*.27,sy-sr*.27,sr*.33,0,Math.PI*2);c2.fill();
+  // Label
+  if(label&&sr>12){const fs=clamp(sr*.44,9,16);c2.font=`bold ${fs}px Georgia,serif`;c2.textAlign='center';c2.textBaseline='middle';c2.fillStyle='rgba(0,0,0,.55)';c2.fillText(label,sx+1,sy+1);c2.fillStyle='#a0ffb0';c2.fillText(label,sx,sy);}
+  c2.restore();
+}
+function drawSplitScreen(){
+  if(!canvas2||!ctx2)return;
+  const W2=canvas2.width,H2=canvas2.height;
+  ctx2.fillStyle='#040210';ctx2.fillRect(0,0,W2,H2);
+  // ambient background particles
+  ctx2.save();ctx2.shadowBlur=12;
+  for(const p of ambParts){
+    const sx=toSX2(p.x),sy=toSY2(p.y),sr=toSR2(p.r);
+    if(sx+sr*4<0||sx-sr*4>W2||sy+sr*4<0||sy-sr*4>H2)continue;
+    const al=p.alpha*(0.5+0.5*Math.sin(p.phase));
+    ctx2.globalAlpha=al;ctx2.fillStyle=p.color;ctx2.shadowColor=p.color;
+    ctx2.beginPath();ctx2.arc(sx,sy,sr,0,Math.PI*2);ctx2.fill();
+  }
+  ctx2.globalAlpha=1;ctx2.shadowBlur=0;ctx2.restore();
+  // grid lines
+  const sp2=80*cam2.zoom;
+  const ox2=((-cam2.x*cam2.zoom+W2*.5)%sp2+sp2)%sp2;
+  const oy2=((-cam2.y*cam2.zoom+H2*.5)%sp2+sp2)%sp2;
+  ctx2.strokeStyle='rgba(80,35,130,.15)';ctx2.lineWidth=1;ctx2.beginPath();
+  for(let x=ox2-sp2;x<W2+sp2;x+=sp2){ctx2.moveTo(x,0);ctx2.lineTo(x,H2);}
+  for(let y=oy2-sp2;y<H2+sp2;y+=sp2){ctx2.moveTo(0,y);ctx2.lineTo(W2,y);}ctx2.stroke();
+  // map border
+  const bx0=toSX2(0),by0=toSY2(0),bx1=toSX2(MAP_SIZE),by1=toSY2(MAP_SIZE);
+  ctx2.strokeStyle='rgba(140,40,200,.5)';ctx2.lineWidth=2.5;ctx2.strokeRect(bx0,by0,bx1-bx0,by1-by0);
+  ctx2.strokeStyle='rgba(180,80,255,.1)';ctx2.lineWidth=18;ctx2.strokeRect(bx0,by0,bx1-bx0,by1-by0);
+  // food
+  ctx2.save();ctx2.shadowBlur=8;
+  for(const f of food){
+    const sx=toSX2(f.x),sy=toSY2(f.y),sr=toSR2(f.r);
+    if(sx+sr<0||sx-sr>W2||sy+sr<0||sy-sr>H2)continue;
+    const pulse=1+.18*Math.sin(globalT*2.8+f.phase);
+    ctx2.shadowColor=f.color;ctx2.fillStyle=f.color;ctx2.beginPath();ctx2.arc(sx,sy,sr*pulse,0,Math.PI*2);ctx2.fill();
+    ctx2.fillStyle='rgba(255,255,255,.36)';ctx2.beginPath();ctx2.arc(sx-sr*.28,sy-sr*.28,sr*.38,0,Math.PI*2);ctx2.fill();
+  }
+  ctx2.shadowBlur=0;ctx2.restore();
+  // ejected mass
+  ctx2.save();ctx2.shadowBlur=8;
+  for(const e of ejectedMass){
+    const sx=toSX2(e.x),sy=toSY2(e.y),sr=toSR2(e.r);
+    if(sx+sr<0||sx-sr>W2||sy+sr<0||sy-sr>H2)continue;
+    ctx2.shadowColor=e.color;ctx2.fillStyle=e.color;ctx2.globalAlpha=Math.min(1,e.life);
+    ctx2.beginPath();ctx2.arc(sx,sy,sr,0,Math.PI*2);ctx2.fill();
+  }
+  ctx2.globalAlpha=1;ctx2.shadowBlur=0;ctx2.restore();
+  // particles
+  ctx2.save();
+  for(const p of parts){
+    const sx=toSX2(p.x),sy=toSY2(p.y);
+    if(sx<-30||sx>W2+30||sy<-30||sy>H2+30)continue;
+    const sr=toSR2(p.size);ctx2.globalAlpha=p.life/p.maxLife*.88;ctx2.fillStyle=p.color;
+    ctx2.shadowColor=p.color;ctx2.shadowBlur=sr*2.5;
+    ctx2.beginPath();ctx2.arc(sx,sy,Math.max(0.5,sr),0,Math.PI*2);ctx2.fill();
+  }
+  ctx2.globalAlpha=1;ctx2.shadowBlur=0;ctx2.restore();
+  // firebolts
+  ctx2.save();
+  for(const fb of firebolts){
+    const sx=toSX2(fb.x),sy=toSY2(fb.y),sr=toSR2(fb.r);
+    if(sx+sr*2.5<0||sx-sr*2.5>W2||sy+sr*2.5<0||sy-sr*2.5>H2)continue;
+    const g=ctx2.createRadialGradient(sx,sy,0,sx,sy,sr*2.5);
+    g.addColorStop(0,'rgba(255,200,60,.9)');g.addColorStop(.4,'rgba(255,80,0,.6)');g.addColorStop(1,'rgba(255,0,0,0)');
+    ctx2.fillStyle=g;ctx2.beginPath();ctx2.arc(sx,sy,sr*2.5,0,Math.PI*2);ctx2.fill();
+    ctx2.shadowColor='#ff8800';ctx2.shadowBlur=sr*3;ctx2.fillStyle='#ffffa0';
+    ctx2.beginPath();ctx2.arc(sx,sy,sr*.6,0,Math.PI*2);ctx2.fill();ctx2.shadowBlur=0;
+  }
+  ctx2.restore();
+  // bots
+  for(const b of bots){
+    if(b.dead)continue;
+    const sx=toSX2(b.x),sy=toSY2(b.y),sr=toSR2(b.r);
+    if(sx+sr<0||sx-sr>W2||sy+sr<0||sy-sr>H2)continue;
+    drawOrb2(ctx2,sx,sy,sr,b.palette,b.eyeAngle,sr>10?b.name:null);
+  }
+  // Remote (multiplayer) players on P2's canvas
+  for(const[,rp] of remotePlayers){
+    if(!rp.cells)continue;
+    const pal=SKINS[rp.skinIdx]?SKINS[rp.skinIdx].pal:PALETTES[rp.palIdx%PALETTES.length]||PALETTES[0];
+    for(const rc of rp.cells){
+      const sx=toSX2(rc.x),sy=toSY2(rc.y),sr=toSR2(rc.r);
+      if(sx+sr<0||sx-sr>W2||sy+sr<0||sy-sr>H2)continue;
+      drawOrb2(ctx2,sx,sy,sr,pal,rc.ea||0,sr>10?rp.name:null);
+    }
+  }
+  // P1 visible from P2's viewport — full dragon skin
+  if(player){
+    const pal1=getPlayerPalette();
+    for(const c of player.cells){
+      const sx=toSX2(c.x),sy=toSY2(c.y),sr=toSR2(c.r);
+      if(sx+sr<-200||sx-sr>W2+200||sy+sr<-200||sy-sr>H2+200)continue;
+      drawOrb2(ctx2,sx,sy,sr,pal1,c.eyeAngle,sr>10?player.name:null);
+    }
+  }
+  // P2 orbs — full dragon skin rendering
+  if(player2){
+    const pal2=p2pal||(SKINS[player2.palIdx]&&SKINS[player2.palIdx].pal)||PALETTES[3];
+    for(const c of player2.cells){
+      const sx=toSX2(c.x),sy=toSY2(c.y),sr=toSR2(c.r);
+      if(sx+sr<0||sx-sr>W2||sy+sr<0||sy-sr>H2)continue;
+      drawOrb2(ctx2,sx,sy,sr,pal2,c.eyeAngle,sr>12?player2.name:null);
+    }
+  }
+}
+
+function activateSplitScreen(){
+  const hw=Math.floor(window.innerWidth/2);
+  const hh=window.innerHeight;
+  // Fix P1 canvas: set BOTH buffer size AND style (fix #2)
+  canvas.width=hw; canvas.height=hh;
+  canvas.style.width=hw+'px'; canvas.style.height=hh+'px';
+  canvas.style.left='0'; canvas.style.top='0';
+  // W/H globals also need updating (used by P1 render math)
+  W=hw; H=hh;
+  // Fix P2 canvas: use inline styles only, no CSS conflict (fix #16)
+  canvas2.style.cssText=`display:block;position:fixed;top:0;left:${hw}px;width:${hw}px;height:${hh}px;z-index:1`;
+  canvas2.width=hw; canvas2.height=hh;
+  const divider=document.getElementById('split-divider');divider.style.display='block';divider.style.left=hw+'px';
+  document.getElementById('p2-label').style.display='block';
+  document.getElementById('p2-label-right').style.display='block';
+  // Position p2-stats in P2 half (right side), anchored to left edge of P2 canvas (fix #17,39)
+  const p2statsEl=document.getElementById('p2-stats');
+  p2statsEl.style.left=(hw+10)+'px';p2statsEl.style.right='auto';p2statsEl.style.display='block';
+  // Hide HUD elements that would overlap P2 canvas (fix #14)
+  ['leaderboard','minimap','fire-hud','music-btn','coins-bar'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.style.visibility='hidden';
+  });
+}
+
+function deactivateSplitScreen(){
+  canvas.style.cssText='display:block;position:fixed;inset:0';
+  canvas.width=window.innerWidth; canvas.height=window.innerHeight;
+  W=window.innerWidth; H=window.innerHeight;
+  if(canvas2){canvas2.style.cssText='display:none;position:fixed;top:0;height:100%;z-index:1';}
+  document.getElementById('split-divider').style.display='none';
+  document.getElementById('p2-label').style.display='none';
+  document.getElementById('p2-label-right').style.display='none';
+  document.getElementById('p2-stats').style.display='none';
+  ['leaderboard','minimap','fire-hud','music-btn','coins-bar'].forEach(id=>{
+    const el=document.getElementById(id);if(el)el.style.visibility='';
+  });
+  document.body.classList.remove('split-active');
+  const m2=document.getElementById('mob2');if(m2)m2.style.display='none';
+  const lz=document.getElementById('left-zone');if(lz)lz.style.width='52%';
+  p2pal=null;
+  player2=null;
+}
+
+/* ══════════════════════════════════════════
+   CHALLENGE MODE WIN/DISMISS
+   (fix #8,20,21,22)
+══════════════════════════════════════════ */
+function checkChallengeWin(){
+  if(!challengeMode||challengeWon)return;
+  // Track if we ever had rivals (fix #15+23: don't block win if they all disconnect later)
+  if(remotePlayers.size>0)window._challengeHadRivals=true;
+  if(currentRank===1&&(window._challengeHadRivals||remotePlayers.size>0)){
+    challengeWon=true;
+    showChallengeWin(player?player.name:'You',true);
+    try{if(ablyChannel&&gunStatus==='online')ablyChannel.publish('challenge_win',{winner:player?player.name:'???'});}catch(e){}
+  }
+}
+function showChallengeWin(winnerName,isMe){
+  const el=document.getElementById('challenge-win');
+  if(el.classList.contains('show'))return; // fix #20: don't re-trigger
+  el.style.pointerEvents='all';
+  el.classList.add('show');
+  document.getElementById('cw-sub').textContent=
+    isMe?'YOU reached #1 first! 🎉':`${winnerName} conquered the realm first!`;
+  SFX.rank1();trigShake(25);
+}
+function dismissChallengeWin(){
+  const el=document.getElementById('challenge-win');
+  el.classList.remove('show');
+  el.style.pointerEvents='none';
+  // Don't reset challengeWon here — endGame/startGame will reset it
+}
+
+/* ══════════════════════════════════════════
+   RESIZE HANDLER — split-mode aware (fix #3,27)
+══════════════════════════════════════════ */
+// Completely replace the original resize listener
+window.removeEventListener('resize',resize); // remove old one
+const resizeSafe=()=>{
+  if(currentMode==='split'&&canvas2&&running){
+    const hw=Math.floor(window.innerWidth/2),hh=window.innerHeight;
+    canvas.width=hw;canvas.height=hh;W=hw;H=hh;
+    canvas.style.width=hw+'px';canvas.style.height=hh+'px';
+    canvas2.width=hw;canvas2.height=hh;
+    canvas2.style.left=hw+'px';canvas2.style.width=hw+'px';canvas2.style.height=hh+'px';
+    document.getElementById('split-divider').style.left=hw+'px';
+    const p2s=document.getElementById('p2-stats');if(p2s)p2s.style.left=(hw+10)+'px';
+  } else {
+    W=canvas.width=window.innerWidth;H=canvas.height=window.innerHeight;
+    canvas.style.width='';canvas.style.height='';
+  }
+};
+window.addEventListener('resize',resizeSafe);
+// Also reset P2 keys on window blur (fix #9)
+window.addEventListener('blur',()=>{
+  p2Keys.up=false;p2Keys.down=false;p2Keys.left=false;p2Keys.right=false;
+  p1Keys.up=false;p1Keys.down=false;p1Keys.left=false;p1Keys.right=false;
+  if(fire2Charging){fire2Charging=false;fire2Charge=0;}
+});
+
+/* ══════════════════════════════════════════
+   PATCH startGame (fix #5,6,17,22)
+══════════════════════════════════════════ */
+// Save a clean reference to the real base startGame
+// (after tutorial + our earlier patches have wrapped it)
+const _origStartGameBase = window.startGame;
+window.startGame=function(){
+  // Challenge mode: go through lobby instead (fix #7)
+  if(currentMode==='challenge'&&!challengeCountingDown){
+    openChallengeLobby();
+    return;
+  }
+  challengeWon=false;
+  challengeCountingDown=false;
+  // Reset P2 state (fix #6)
+  fire2Charge=0;fire2Charging=false;fire2Cooldown=0;
+  p2Keys.up=false;p2Keys.down=false;p2Keys.left=false;p2Keys.right=false;
+  p1Keys.up=false;p1Keys.down=false;p1Keys.left=false;p1Keys.right=false;
+  // Reset challenge rival flag (fix #15)
+  window._challengeHadRivals=false;
+  // Reset manual skin choice back to best unlocked if none chosen
+  if(manualSkinIdx>=0) currentSkinIdx=manualSkinIdx;
+  _origStartGameBase.apply(this,arguments);
+  if(currentMode==='split'){
+    const p2name=(document.getElementById('p2-name-input').value.trim()||'Player 2').slice(0,16);
+    activateSplitScreen();
+    initPlayer2(p2name);
+    document.body.classList.add('split-active');
+    // Show P2 mobile controls on touch devices
+    if(isMobile||'ontouchstart' in window){
+      const m2=document.getElementById('mob2');if(m2)m2.style.display='block';
+      // Restrict P1 joystick to left half
+      const lz=document.getElementById('left-zone');if(lz)lz.style.width='50%';
+    }
+  } else {
+    deactivateSplitScreen();
+    document.body.classList.remove('split-active');
+    const m2=document.getElementById('mob2');if(m2)m2.style.display='none';
+    const lz=document.getElementById('left-zone');if(lz)lz.style.width='52%';
+  }
+  if(currentMode==='challenge'){
+    document.getElementById('challenge-banner').classList.add('show');
+    document.body.classList.add('challenge-active'); // fix #21
+  } else {
+    document.getElementById('challenge-banner').classList.remove('show');
+    document.body.classList.remove('challenge-active');
+  }
+};
+
+/* ══════════════════════════════════════════
+   PATCH endGame — clean up split+challenge (fix #5,22)
+══════════════════════════════════════════ */
+const _origEndGame=window.endGame;
+window.endGame=function(killerName){
+  if(currentMode==='split') deactivateSplitScreen();
+  document.body.classList.remove('challenge-active');
+  _origEndGame.apply(this,arguments);
+};
+
+/* ══════════════════════════════════════════
+   PATCH showDeathOverlay — challenge message (fix #22)
+══════════════════════════════════════════ */
+const _origShowDeath=window.showDeathOverlay;
+window.showDeathOverlay=function(){
+  _origShowDeath.apply(this,arguments);
+  // Always remove challenge-active when death overlay shows (fix #28)
+  document.getElementById('challenge-banner').classList.remove('show');
+  document.body.classList.remove('challenge-active');
+  if(currentMode==='challenge'){
+    const ov=document.getElementById('overlay');
+    if(!challengeWon){
+      ov.querySelector('.tagline').textContent='You didn\'t reach #1 — rise and try again!';
+    }
+    challengeCountingDown=false;
+  }
+};
+
+/* ══════════════════════════════════════════
+   PATCH loop — correct dt for P2 (fix #1)
+══════════════════════════════════════════ */
+const _origLoop=window.loop;
+let _lastLoopTs=0;
+window.loop=function(ts){
+  // Compute real dt BEFORE calling original loop (which updates lastTime)
+  const rawDt2=Math.min((_lastLoopTs>0?(ts-_lastLoopTs)/1000:0.016),.05);
+  _lastLoopTs=ts;
+  _origLoop.call(this,ts);
+
+  if(currentMode==='split'&&running&&player2){
+    const dt2=rawDt2*(slowMoTimer>0?0.22:1.0);
+    updatePlayer2(dt2);
+    updateCam2(dt2);
+    drawSplitScreen();
+    renderP2HUD();
+  }
+  if(currentMode==='challenge'&&running){
+    checkChallengeWin();
+    const ldr=document.getElementById('ch-leader');
+    const st=document.getElementById('ch-status');
+    if(ldr)ldr.textContent=`You: #${currentRank}`;
+    if(st){
+      const rCount=remotePlayers.size;
+      st.textContent=rCount>0?`${rCount} rival${rCount!==1?'s':''} online`:'No rivals online';
+    }
+  }
+
+  // Lobby: keep player list updated while in lobby
+  if(lobbyOpen) updateLobbyPlayerList();
+  // Prune stale remote players every ~5s (fix #16)
+  if(!window._pruneTs||ts-window._pruneTs>5000){window._pruneTs=ts;pruneRemote();}
+};
+
+/* ══════════════════════════════════════════
+   SPLIT SCREEN KEYBOARD — P1 & P2 (fix #17,18,19)
+══════════════════════════════════════════ */
+// Replace P1 keydown handler in-place (fix #20: remove old before adding new)
+window.removeEventListener('keydown',window._p1KeydownHandler);
+window._p1KeydownHandler=e=>{
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight',' '].includes(e.key))e.preventDefault();
+  if(!running)return;
+  if(currentMode==='split'){
+    // P1 uses WASD to move, T=split, Space=fire
+    if(e.key==='w'||e.key==='W'){p1Keys.up=true;}
+    if(e.key==='s'||e.key==='S'){p1Keys.down=true;}
+    if(e.key==='a'||e.key==='A'){p1Keys.left=true;}
+    if(e.key==='d'||e.key==='D'){p1Keys.right=true;}
+    if(e.key==='t'||e.key==='T')splitPlayer();
+    if(e.key==='e'||e.key==='E')ejectMass();
+  } else {
+    // Solo: W=split, E=eject (mouse controls direction)
+    if(e.key==='w'||e.key==='W')splitPlayer();
+    if(e.key==='e'||e.key==='E')ejectMass();
+  }
+  if(e.code==='Space'){e.preventDefault();startChargeFire();}
+};
+window.addEventListener('keydown',window._p1KeydownHandler);
+// Replace P1 keyup handler in-place — must clear p1Keys in split mode
+window.removeEventListener('keyup',window._p1KeyupHandler);
+window._p1KeyupHandler=e=>{
+  if(e.code==='Space'){e.preventDefault();releaseFire();}
+  if(currentMode==='split'){
+    if(e.key==='w'||e.key==='W')p1Keys.up=false;
+    if(e.key==='s'||e.key==='S')p1Keys.down=false;
+    if(e.key==='a'||e.key==='A')p1Keys.left=false;
+    if(e.key==='d'||e.key==='D')p1Keys.right=false;
+  }
+};
+window.addEventListener('keyup',window._p1KeyupHandler);
+
+// P2 keys — Arrow keys + Enter=split + Shift=fire
+window.addEventListener('keydown',e=>{
+  if(currentMode!=='split'||!running)return;
+  if(e.key==='ArrowLeft'){e.preventDefault();p2Keys.left=true;}
+  if(e.key==='ArrowRight'){e.preventDefault();p2Keys.right=true;}
+  if(e.key==='ArrowUp'){e.preventDefault();p2Keys.up=true;}
+  if(e.key==='ArrowDown'){e.preventDefault();p2Keys.down=true;}
+  if(e.key==='Enter'){e.preventDefault();splitPlayer2();}
+  if(e.key==='Shift'){e.preventDefault();fire2Charging=true;}
+});
+window.addEventListener('keyup',e=>{
+  if(currentMode!=='split')return;
+  if(e.key==='ArrowLeft')p2Keys.left=false;
+  if(e.key==='ArrowRight')p2Keys.right=false;
+  if(e.key==='ArrowUp')p2Keys.up=false;
+  if(e.key==='ArrowDown')p2Keys.down=false;
+  if(e.key==='Shift')releaseFire2();
+});
+
+/* ══════════════════════════════════════════
+   PATCH initMultiplayer to listen for challenge_start (fix #43)
+══════════════════════════════════════════ */
+const _origInitMultiplayer=window.initMultiplayer;
+window.initMultiplayer=function(roomCode){
+  _origInitMultiplayer.apply(this,arguments);
+  // Re-attach challenge_start listener - try immediately and retry until channel ready
+  let _listenAttempts=0;
+  const _tryListen=()=>{
+    if(ablyChannel&&ablyClient&&ablyClient.connection.state==='connected'){
+      listenChallengeStart();
+    } else if(_listenAttempts++<20){
+      setTimeout(_tryListen,300);
+    }
+  };
+  setTimeout(_tryListen,300);
+};
+
+/* ══════════════════════════════════════════
+   FIX: URL invite link cleanup (fix #35)
+══════════════════════════════════════════ */
+// Patch copyInviteLink to build a clean URL
+window.copyInviteLink=async function(){
+  const link=await CG.getInviteLink({room:currentRoom});
+  const url=new URL(window.location.origin+window.location.pathname);
+  url.searchParams.set('room',currentRoom);
+  if(challengeMode)url.searchParams.set('challenge','1');
+  const finalUrl=link||url.toString();
+  const statusEl=document.getElementById('room-status');
+  _copyText(finalUrl,statusEl,'✅ Invite link copied!',null,0);
+  setTimeout(()=>updateRoomStatus(),2500);
+};
+
+/* ══════════════════════════════════════════
+   FIX: room status not overwritten (fix #33)
+══════════════════════════════════════════ */
+window.updateRoomStatus=function(){
+  const el=document.getElementById('room-status');
+  const invBtn=document.getElementById('invite-link-btn');
+  if(currentRoom!=='global'){
+    el.textContent=`Room: ${currentRoom} — share the invite link!`;
+    if(invBtn)invBtn.style.display='';
+  } else {
+    el.textContent='';
+    if(invBtn)invBtn.style.display='none';
+  }
+};
+
+/* ══════════════════════════════════════════
+   FIX: challenge mode in URL auto-opens lobby (fix #34)
+══════════════════════════════════════════ */
+try{
+  const _pu=new URL(window.location.href);
+  if(_pu.searchParams.get('challenge')==='1'){
+    const rc=_pu.searchParams.get('room');
+    if(rc){
+      // Non-host joining via invite link
+      isLobbyHost=false;
+      currentMode='challenge';challengeMode=true;
+      document.getElementById('tab-challenge').classList.add('active');
+      document.getElementById('tab-solo').classList.remove('active');
+      setTimeout(()=>{openChallengeLobby();},1800);
+    }
+  }
+}catch(e){}
+
+/* ══════════════════════════════════════════
+   FIX: Android fire button touchcancel (fix #38)
+══════════════════════════════════════════ */
+const _fBtn=document.getElementById('btn-fire');
+if(_fBtn){
+  _fBtn.addEventListener('touchcancel',e=>{
+    e.preventDefault();e.stopImmediatePropagation();releaseFire();
+  },{passive:false});
+}
+
+/* ══════════════════════════════════════════
+   FIX: mobile left-zone should not overlap challenge banner (fix #37)
+══════════════════════════════════════════ */
+function adjustMobileForBanner(){
+  const lz=document.getElementById('left-zone');
+  if(!lz)return;
+  if(challengeMode&&running){
+    lz.style.top='40px';lz.style.height='calc(100% - 40px)';
+  } else {
+    lz.style.top='';lz.style.height='';
+  }
+}
+
 function bootMultiplayer(){
+  // Always init GLB display (fix #30: don't wait for supabase to load leaderboard UI)
+  initGLB((()=>{try{return localStorage.getItem('dragonorb_name')||'';}catch{return '';}})());
   if(typeof window.supabase!=='undefined'){
     initGun();
     const preRoom=document.getElementById('room-input').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'')||'global';
     initMultiplayer(preRoom);
-    initGLB((()=>{try{return localStorage.getItem('dragonorb_name')||'';}catch{return '';}})());
+    // Room join listener — when a CrazyGames friend joins via the CG UI,
+    // automatically switch to their room without a page reload
+    CG.addRoomJoinListener(({ roomId, inviteParams }) => {
+      const targetRoom = (inviteParams && inviteParams.room) || roomId || 'global';
+      document.getElementById('room-input').value = targetRoom;
+      initMultiplayer(targetRoom);
+    });
+    // IsInstantMultiplayer — if launched from CrazyGames multiplayer page,
+    // create a fresh private room immediately and start game
+    setTimeout(() => {
+      if(CG.isInstantMultiplayer()){
+        const code = Math.random().toString(36).slice(2,7).toUpperCase();
+        document.getElementById('room-input').value = code;
+        initMultiplayer(code);
+        startGame();
+      }
+    }, 800); // wait for SDK init
   } else setTimeout(bootMultiplayer,200);
 }
 bootMultiplayer();
+/* ══════════════════════════════════════════
+   P2 TOUCH CONTROLS (mobile split screen)
+══════════════════════════════════════════ */
+(function initMobileP2(){
+  const rz=document.getElementById('right-zone');
+  if(!rz)return;
+  const jr2=document.getElementById('joy-ring2');
+  const jt2=document.getElementById('joy-thumb2');
+  const BASE=50;
+  let jAct=false,jTid=-1,jOx=0,jOy=0;
+  rz.addEventListener('touchstart',e=>{
+    e.preventDefault();e.stopPropagation();
+    const t=e.changedTouches[0];
+    jTid=t.identifier;jAct=true;jOx=t.clientX;jOy=t.clientY;
+    if(jr2){jr2.style.left=t.clientX+'px';jr2.style.top=t.clientY+'px';jr2.classList.add('visible');}
+  },{passive:false});
+  rz.addEventListener('touchmove',e=>{
+    e.preventDefault();e.stopPropagation();
+    if(!jAct)return;
+    for(const t of e.changedTouches){
+      if(t.identifier!==jTid)continue;
+      const dx=t.clientX-jOx,dy=t.clientY-jOy,dist=Math.sqrt(dx*dx+dy*dy),clamped=Math.min(dist,BASE);
+      const nx=dist>0?dx/dist:0,ny=dist>0?dy/dist:0;
+      if(jr2&&jt2){jt2.style.left=(jOx+nx*clamped)+'px';jt2.style.top=(jOy+ny*clamped)+'px';}
+      p2Keys.left=dx<-10;p2Keys.right=dx>10;p2Keys.up=dy<-10;p2Keys.down=dy>10;
+    }
+  },{passive:false});
+  function p2TouchEnd(e){
+    e.preventDefault();
+    for(const t of e.changedTouches){if(t.identifier===jTid){jAct=false;break;}}
+    if(!jAct){p2Keys.up=false;p2Keys.down=false;p2Keys.left=false;p2Keys.right=false;
+      if(jr2)jr2.classList.remove('visible');}
+  }
+  rz.addEventListener('touchend',p2TouchEnd,{passive:false});
+  rz.addEventListener('touchcancel',p2TouchEnd,{passive:false});
+  // P2 split button
+  const sp2=document.getElementById('btn-split2');
+  if(sp2){sp2.addEventListener('touchstart',e=>{e.preventDefault();splitPlayer2();},{passive:false});}
+  // P2 fire button
+  const fb2=document.getElementById('btn-fire2');
+  if(fb2){
+    fb2.addEventListener('touchstart',e=>{e.preventDefault();e.stopPropagation();fire2Charging=true;},{passive:false});
+    fb2.addEventListener('touchend',e=>{e.preventDefault();e.stopPropagation();releaseFire2();},{passive:false});
+    fb2.addEventListener('touchcancel',e=>{e.preventDefault();e.stopImmediatePropagation();releaseFire2();},{passive:false});
+  }
+})();
+
 (function drawStartBG(){ctx.fillStyle='#040210';ctx.fillRect(0,0,W,H);})();
 updateOnlineDisplay();
 </script>
