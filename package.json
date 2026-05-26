@@ -1,0 +1,14 @@
+{
+  "name": "dragon-orb",
+  "version": "1.0.0",
+  "description": "DragonOrb.io game",
+  "type": "module",
+  "scripts": {
+    "dev": "npx serve .",
+    "build": "echo 'Static HTML - no build required'",
+    "lint": "echo 'No linter configured'"
+  },
+  "dependencies": {
+    "@vercel/analytics": "^2.0.1"
+  }
+}
